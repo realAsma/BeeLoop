@@ -4,8 +4,9 @@ set -euo pipefail
 BEEBOT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 GUEST_WORKSPACE="$BEEBOT_ROOT/workspaces/workspace_guest"
 GUEST_CODEX_HOME="$GUEST_WORKSPACE/codex_home_guest"
+GUEST_CLAUDE_HOME="$GUEST_WORKSPACE/claude_home_guest"
 
-mkdir -p "$GUEST_WORKSPACE" "$GUEST_CODEX_HOME"
+mkdir -p "$GUEST_WORKSPACE" "$GUEST_CODEX_HOME" "$GUEST_CLAUDE_HOME"
 
 if (($# > 0)); then
   prompt="$*"
@@ -13,8 +14,20 @@ else
   prompt="$(cat)"
 fi
 
-exec env CODEX_HOME="$GUEST_CODEX_HOME" codex exec \
-  --sandbox read-only \
-  --skip-git-repo-check \
-  -C "$GUEST_WORKSPACE" \
-  -- "$prompt"
+case "${BEEBOT_ENGINE:-codex}" in
+codex)
+  exec env CODEX_HOME="$GUEST_CODEX_HOME" codex exec \
+    --sandbox read-only \
+    --skip-git-repo-check \
+    -C "$GUEST_WORKSPACE" \
+    -- "$prompt"
+  ;;
+claude)
+  cd "$GUEST_WORKSPACE"
+  exec env CLAUDE_CONFIG_DIR="$GUEST_CLAUDE_HOME" claude -p "$prompt" --permission-mode plan
+  ;;
+*)
+  printf 'guest_bee: unknown BEEBOT_ENGINE %s (expected codex or claude)\n' "${BEEBOT_ENGINE:-codex}" >&2
+  exit 2
+  ;;
+esac

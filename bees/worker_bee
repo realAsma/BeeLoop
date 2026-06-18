@@ -27,8 +27,20 @@ prompt="${msg#*$'\n\n'}"
 
 workspace_dir="$(cd "$workspace" && pwd -P)"
 
-exec codex exec \
-  --sandbox workspace-write \
-  --skip-git-repo-check \
-  -C "$workspace_dir" \
-  -- "$prompt"
+case "${BEEBOT_ENGINE:-codex}" in
+codex)
+  exec codex exec \
+    --sandbox workspace-write \
+    --skip-git-repo-check \
+    -C "$workspace_dir" \
+    -- "$prompt"
+  ;;
+claude)
+  cd "$workspace_dir"
+  exec claude -p "$prompt" --permission-mode acceptEdits
+  ;;
+*)
+  printf 'worker_bee: unknown BEEBOT_ENGINE %s (expected codex or claude)\n' "${BEEBOT_ENGINE:-codex}" >&2
+  exit 2
+  ;;
+esac
