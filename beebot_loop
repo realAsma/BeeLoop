@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+mkdir -p "$ROOT/bees" "$ROOT/inputs.d" "$ROOT/logs"
+shopt -s nullglob
+
+while true; do
+  for input in "$ROOT/inputs.d"/*; do
+    input_name="$(basename "$input")"
+    if msg="$("$input")"; then
+      :
+    else
+      printf 'beebot_loop: input failed: %s\n' "$input_name" >&2
+      continue
+    fi
+    [[ -n "$msg" ]] || continue
+    first_line="${msg%%$'\n'*}"
+    bee_name="${first_line#bee=}"
+    body="${msg#*$'\n\n'}"
+
+    printf '[%s] beebot_loop: input detected: %s bee=%s\n' \
+      "$(date -Is)" "$input_name" "$bee_name" | tee -a "$ROOT/logs/beebot_loop.log"
+    printf '%s' "$body" | "$ROOT/bees/$bee_name" \
+      >>"$ROOT/logs/beebot_loop.$bee_name.log" 2>&1 &
+  done
+  sleep "${BEEBOT_INPUT_INTERVAL:-1}"
+done

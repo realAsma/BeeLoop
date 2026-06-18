@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Request body: workspace=/path/to/workspace, blank line, then task prompt.
+
+if (($# == 0)); then
+  msg="$(cat)"
+elif (($# == 1)); then
+  msg="$1"
+else
+  printf 'worker_bee: expected one request body\n' >&2
+  exit 2
+fi
+
+first_line="${msg%%$'\n'*}"
+[[ "$first_line" == workspace=* && "$msg" == *$'\n\n'* ]] || {
+  printf 'worker_bee: invalid request body\n' >&2
+  exit 2
+}
+
+workspace="${first_line#workspace=}"
+prompt="${msg#*$'\n\n'}"
+[[ -n "$workspace" && -n "$prompt" ]] || {
+  printf 'worker_bee: missing workspace or prompt\n' >&2
+  exit 2
+}
+
+workspace_dir="$(cd "$workspace" && pwd -P)"
+
+exec codex exec \
+  --sandbox workspace-write \
+  --skip-git-repo-check \
+  -C "$workspace_dir" \
+  -- "$prompt"

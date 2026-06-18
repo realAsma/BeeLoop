@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BEEBOT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+GUEST_WORKSPACE="$BEEBOT_ROOT/workspaces/workspace_guest"
+GUEST_CODEX_HOME="$GUEST_WORKSPACE/codex_home_guest"
+
+mkdir -p "$GUEST_WORKSPACE" "$GUEST_CODEX_HOME"
+
+if (($# > 0)); then
+  prompt="$*"
+else
+  prompt="$(cat)"
+fi
+
+exec env CODEX_HOME="$GUEST_CODEX_HOME" codex exec \
+  --sandbox read-only \
+  --skip-git-repo-check \
+  -C "$GUEST_WORKSPACE" \
+  -- "$prompt"
