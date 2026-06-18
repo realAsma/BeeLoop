@@ -73,8 +73,9 @@ can resume and coordinate work across invocations.
 
 ### Memory
 
-- Durable knowledge BeeBot learned is kept in `MEMORY.md`. Working context belongs
-  in `states/`, not `MEMORY.md`.
+- `MEMORY.md` is your long-term memory: record durable, cross-cutting knowledge and
+  preferences there. Keep working context in `states/`, and extension-specific
+  preferences with their skill, input, or tool (see [Extending Capabilities](#extending-capabilities)).
 - Never store secrets or sensitive temporary details in long-term memory.
 
 ### Workspace Selection
