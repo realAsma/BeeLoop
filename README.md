@@ -1,36 +1,31 @@
 # BeeBot
 
-BeeBot transforms Codex/Claude CLI into your personal assistant that remembers
-and grows itself for your needs.
+BeeBot transforms the Codex/Claude CLI into a personal assistant that remembers
+its past and grows itself for your needs.
 
-BeeBot is inspired by [OpenClaw](https://github.com/openclaw/openclaw) and
-extended from [SeedBot](https://github.com/RalphMao/seedbot).
+It is an event-triggered, stateful assistant like
+[OpenClaw](https://github.com/openclaw/openclaw), but built with the same
+minimalism as [SeedBot](https://github.com/RalphMao/seedbot).
 
-## What is BeeBot
+BeeBot is part of a hive of agents, scoped for access or workspace.
+`beebot_loop` continuously listens for non-empty input from scripts in
+`inputs.d/`, such as cron events or Slack messages, and dispatches each event to
+the appropriate bee agent.
 
-BeeBot is an event-triggered, stateful assistant. Each trigger — a Slack
-message, a cron tick, a CLI prompt — spins up a fresh BeeBot, but continuity is
-never lost. On every run, BeeBot:
+BeeBot is the "Queen Bee" of this hive, your all-access autonomous assistant
+that:
 
-- **Receives triggers** from various input sources (Slack threads, cron jobs,
-  etc.) via the adapters in `inputs.d/`.
-- **Maintains continuity** across invocations through state files in `states/`
-  (inputs, tasks, workspaces).
-- **Orchestrates work** — delegating to scoped bees like `worker_bee` (workspace-scoped delegation) when appropriate.
-- **Handles concurrency** so overlapping triggers coordinate instead of
-  colliding.
+- **Maintains continuity** across invocations through state files in `states/`.
+- **Orchestrates work**, delegating to scoped bees like the workspace-scoped
+  `worker_bee`.
+- **Handles concurrency** so overlapping inputs (such as different Slack
+  messages) coordinate instead of colliding.
+- **Self-extends capabilities**, by adding new skills, tools, and even new
+  scoped bees.
+- **Adds self-triggering events** to `inputs.d/`, such as adding a wake-up timer
+  for follow-up.
 
-BeeBot is the owner-facing, full-access bee; the other bees are scoped, less
-privileged agents it orchestrates. See [AGENTS.md](AGENTS.md) for the full
-operating contract.
-
-## What's special about BeeBot
-
-- **Minimal code**: just a Bash wrapper and a loop — the underlying agent CLI
-  (Codex or Claude) handles state, orchestration, and concurrency.
-- **Stateful yet lean**: OpenClaw's continuity with SeedBot's minimalism.
-- **Self-extending**: grows its own scoped bees, skills, and tools as your needs
-  evolve.
+Learn more about how BeeBot works in [AGENTS.md](AGENTS.md).
 
 ## Install
 
@@ -48,13 +43,14 @@ the Claude Code CLI instead; the selected engine is inherited by every bee.
 
 ### Codex (default)
 
-BeeBot CLI for interactive uses:
+BeeBot CLI for interactive uses (routed to Codex CLI):
 
 ```bash
 ./beebot
 ```
 
-Start the polling loop to listen for inputs (such as [Slack](#building-slack-support), timer):
+Start the `beebot_loop` to listen for inputs (such as
+[Slack](#building-slack-support), timer):
 
 ```bash
 ./beebot_loop
@@ -79,11 +75,11 @@ tmux new -d -s beebot_loop 'BEEBOT_ENGINE=claude ./beebot_loop'
 
 ## Building Slack Support
 
-Slack intake is not built in yet. This repo ships a specification document for
-adding the private Slack interface to BeeBot:
+This repo ships an English specification document for adding the private Slack
+interface to BeeBot:
 [`specs/slack_private.md`](specs/slack_private.md).
 
-To build it, ask BeeBot:
+You can review it (optional) and ask BeeBot to build it:
 
 ```bash
 ./beebot 'Can you build this? specs/slack_private.md'
@@ -91,8 +87,8 @@ To build it, ask BeeBot:
 
 ## TODO
 
-- `guest_bee` is currently a proof of concept. It is not tested or wired to any
-  input yet. Manual invocation for testing:
+- `guest_bee` is currently a proof of concept. It is not an actively used
+  feature yet. Manual invocation for testing:
 
   ```bash
   ./bees/guest_bee "Public-safe prompt"
