@@ -9,6 +9,8 @@
 !/beebot
 !/beebot_loop
 !/bees/
+!/bees/README.md
+!/bees/args.sh
 !/bees/beebot
 !/bees/guest_bee
 !/bees/worker_bee

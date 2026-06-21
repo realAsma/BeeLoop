@@ -1,46 +1,91 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Request body: workspace=/path/to/workspace, blank line, then task prompt.
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+BEEBOT_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd -P)"
 
-if (($# == 0)); then
-  msg="$(cat)"
-elif (($# == 1)); then
-  msg="$1"
-else
-  printf 'worker_bee: expected one request body\n' >&2
+source "$BEEBOT_ROOT/bees/args.sh"
+
+usage() {
+  cat <<'EOF'
+usage: worker_bee [request-body]
+
+Runs a workspace-scoped worker.
+Request comes from stdin or one request-body argument.
+Prints only the worker final answer to stdout; writes worker transcript to log_file.
+EOF
+}
+
+engine="codex"
+workspace=""
+final_file=""
+log_file=""
+
+handle_arg() {
+  case "$1" in
+  engine) engine="$2" ;;
+  workspace) workspace="$2" ;;
+  final_file) final_file="$2" ;;
+  log_file) log_file="$2" ;;
+  *) unknown_arg "$1" ;;
+  esac
+}
+
+parse_request "$@"
+
+[[ -n "$workspace" ]] || {
+  printf 'worker_bee: missing workspace=PATH\n' >&2
+  exit 2
+}
+
+if ! workspace_dir="$(cd "$workspace" 2>/dev/null && pwd -P)"; then
+  printf 'worker_bee: invalid workspace %s\n' "$workspace" >&2
   exit 2
 fi
+cd "$workspace_dir"
 
-first_line="${msg%%$'\n'*}"
-[[ "$first_line" == workspace=* && "$msg" == *$'\n\n'* ]] || {
-  printf 'worker_bee: invalid request body\n' >&2
+[[ -n "$prompt" ]] || {
+  printf 'worker_bee: missing prompt\n' >&2
   exit 2
 }
 
-workspace="${first_line#workspace=}"
-prompt="${msg#*$'\n\n'}"
-[[ -n "$workspace" && -n "$prompt" ]] || {
-  printf 'worker_bee: missing workspace or prompt\n' >&2
-  exit 2
-}
+run_dir="$BEEBOT_ROOT/logs/worker_bee"
+mkdir -p "$run_dir"
+run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+final_file="${final_file:-$run_dir/$run_id.final.md}"
+log_file="${log_file:-$run_dir/$run_id.log}"
 
-workspace_dir="$(cd "$workspace" && pwd -P)"
+run_status=0
 
-case "${BEEBOT_ENGINE:-codex}" in
+case "$engine" in
 codex)
-  exec codex exec \
+  codex exec \
+    --output-last-message "$final_file" \
     --sandbox workspace-write \
     --skip-git-repo-check \
-    -C "$workspace_dir" \
-    -- "$prompt"
+    -c 'project_root_markers=[]' \
+    -- "$prompt" >"$log_file" 2>&1 || run_status=$?
   ;;
 claude)
-  cd "$workspace_dir"
-  exec claude -p "$prompt" --permission-mode acceptEdits
+  claude_settings="$(printf '{"claudeMdExcludes":["%s/CLAUDE.md"]}' "$BEEBOT_ROOT")"
+  claude -p "$prompt" --permission-mode acceptEdits --settings "$claude_settings" \
+    >"$final_file" 2>"$log_file" || run_status=$?
   ;;
 *)
-  printf 'worker_bee: unknown BEEBOT_ENGINE %s (expected codex or claude)\n' "${BEEBOT_ENGINE:-codex}" >&2
+  printf 'worker_bee: unknown engine %s\n' "$engine" >&2
   exit 2
   ;;
 esac
+
+if ((run_status != 0)); then
+  printf 'worker_bee: %s failed with exit %s; log: %s\n' "$engine" "$run_status" "$log_file" >&2
+  tail -n 40 "$log_file" >&2 || true
+  exit "$run_status"
+fi
+
+[[ -s "$final_file" ]] || {
+  printf 'worker_bee: missing final output: %s\n' "$final_file" >&2
+  exit 1
+}
+
+cat "$final_file"

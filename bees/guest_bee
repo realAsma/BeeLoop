@@ -6,28 +6,49 @@ GUEST_WORKSPACE="$BEEBOT_ROOT/workspaces/workspace_guest"
 GUEST_CODEX_HOME="$GUEST_WORKSPACE/codex_home_guest"
 GUEST_CLAUDE_HOME="$GUEST_WORKSPACE/claude_home_guest"
 
+source "$BEEBOT_ROOT/bees/args.sh"
+
+usage() {
+  cat <<'EOF'
+usage: guest_bee [request-body]
+
+Runs a restricted public-safe bee.
+Request comes from stdin or one request-body argument.
+EOF
+}
+
+engine="codex"
+
+handle_arg() {
+  case "$1" in
+  engine) engine="$2" ;;
+  *) unknown_arg "$1" ;;
+  esac
+}
+
+parse_request "$@"
+
 mkdir -p "$GUEST_WORKSPACE" "$GUEST_CODEX_HOME" "$GUEST_CLAUDE_HOME"
+ln -sfn AGENTS.md "$GUEST_WORKSPACE/CLAUDE.md"
 
-if (($# > 0)); then
-  prompt="$*"
-else
-  prompt="$(cat)"
-fi
+cd "$GUEST_WORKSPACE"
 
-case "${BEEBOT_ENGINE:-codex}" in
+case "$engine" in
 codex)
   exec env CODEX_HOME="$GUEST_CODEX_HOME" codex exec \
     --sandbox read-only \
     --skip-git-repo-check \
-    -C "$GUEST_WORKSPACE" \
+    -c 'project_root_markers=[]' \
     -- "$prompt"
   ;;
 claude)
-  cd "$GUEST_WORKSPACE"
-  exec env CLAUDE_CONFIG_DIR="$GUEST_CLAUDE_HOME" claude -p "$prompt" --permission-mode plan
+  claude_settings="$(printf '{"claudeMdExcludes":["%s/CLAUDE.md"]}' "$BEEBOT_ROOT")"
+  exec env CLAUDE_CONFIG_DIR="$GUEST_CLAUDE_HOME" claude -p "$prompt" \
+    --permission-mode plan \
+    --settings "$claude_settings"
   ;;
 *)
-  printf 'guest_bee: unknown BEEBOT_ENGINE %s (expected codex or claude)\n' "${BEEBOT_ENGINE:-codex}" >&2
+  printf 'guest_bee: unknown engine %s\n' "$engine" >&2
   exit 2
   ;;
 esac

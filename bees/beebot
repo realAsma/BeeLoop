@@ -4,9 +4,29 @@ set -euo pipefail
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 BEEBOT_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd -P)"
 
-engine="${BEEBOT_ENGINE:-codex}"
+source "$BEEBOT_ROOT/bees/args.sh"
 
-if (($# == 0)) && [[ -t 0 ]]; then
+usage() {
+  cat <<'EOF'
+usage: beebot [request-body]
+
+Runs the owner-facing BeeBot.
+Request comes from stdin or one request-body argument.
+EOF
+}
+
+engine="codex"
+
+handle_arg() {
+  case "$1" in
+  engine) engine="$2" ;;
+  *) unknown_arg "$1" ;;
+  esac
+}
+
+parse_request "$@"
+
+if [[ -z "$prompt" && -t 0 ]]; then
   case "$engine" in
   codex)
     exec codex \
@@ -19,16 +39,10 @@ if (($# == 0)) && [[ -t 0 ]]; then
     exec claude --permission-mode bypassPermissions
     ;;
   *)
-    printf 'beebot: unknown BEEBOT_ENGINE %s (expected codex or claude)\n' "$engine" >&2
+    printf 'beebot: unknown engine %s\n' "$engine" >&2
     exit 2
     ;;
   esac
-fi
-
-if (($# > 0)); then
-  prompt="$*"
-else
-  prompt="$(cat)"
 fi
 
 case "$engine" in
@@ -45,7 +59,7 @@ claude)
   exec claude -p "$prompt" --permission-mode bypassPermissions
   ;;
 *)
-  printf 'beebot: unknown BEEBOT_ENGINE %s (expected codex or claude)\n' "$engine" >&2
+  printf 'beebot: unknown engine %s\n' "$engine" >&2
   exit 2
   ;;
 esac

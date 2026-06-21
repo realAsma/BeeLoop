@@ -38,8 +38,8 @@ the repo tree, leaving access limited to this user.
 
 ## Run
 
-BeeBot runs on the Codex CLI by default. Set `BEEBOT_ENGINE=claude` to route to
-the Claude Code CLI instead; the selected engine is inherited by every bee.
+Bee scripts run on the Codex CLI by default. In a bee request, add an
+`engine=claude` header to route that bee to the Claude Code CLI instead.
 
 ### Codex (default)
 
@@ -64,14 +64,12 @@ tmux new -d -s beebot_loop './beebot_loop'
 
 ### Claude
 
-Prefix any of the above with `BEEBOT_ENGINE=claude`:
-
 ```bash
-BEEBOT_ENGINE=claude ./beebot
-
-# for the loop, keep it inside the command so the bees inherit it:
-tmux new -d -s beebot_loop 'BEEBOT_ENGINE=claude ./beebot_loop'
+./beebot 'engine=claude'
 ```
+
+`beebot_loop` passes request bodies on stdin; bee headers in that body are
+parsed by the selected bee.
 
 ## Building Slack Support
 

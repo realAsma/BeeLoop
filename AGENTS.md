@@ -21,7 +21,7 @@ both your capabilities and the hive's as needed.
 - `inputs.d/`: executable adapters that turn source events into BeeBot dispatch
   envelopes.
 - `beebot_loop`: long-lived poll loop over `inputs.d/`.
-- `bees/`: executable bees that receive request bodies.
+- `bees/`: executable bees.
 - `states/`: shared continuity and coordination records.
 - `tools/`: repo-local code/script helpers for repeatable BeeBot and input
   workflows.
@@ -32,18 +32,13 @@ both your capabilities and the hive's as needed.
 
 ### Writing Inputs
 
-Adapters live under `inputs.d/`. Print nothing when idle; otherwise emit one
-envelope on stdout:
+Adapters live under `inputs.d/`. Print nothing when idle; otherwise emit a text
+body on stdout containing the target bee name and a short notification-style
+prompt (more in [`bees/README.md`](bees/README.md)).
 
-```text
-bee=<bee-name>
-
-<request body>
-```
-
-Request bodies are notification-style text for the selected bee. Inputs describe
-what happened and where to look; bees decide what to do. Pass retrieval context
-such as links or ids instead of raw binaries or bee-specific wire formats.
+Inputs describe what happened and where to look; bees decide what to do. Pass
+retrieval context such as links or ids instead of raw binaries or bee-specific
+wire formats.
 
 Send runtime logs, such as diagnostics, to stderr or log files, not stdout.
 Each input owns its source runtime: on every poll, validate or
@@ -104,23 +99,59 @@ contains:
 Use short-lived locks while reading, editing, or merging `states/`. Release the
 lock immediately after state access; do not hold it across long-running work.
 
+## Delegation
+
+[`worker_bee`](bees/worker_bee) is a workspace-scoped agent.
+
+Delegate non-root workspace work, including read-only investigation, to
+`./bees/worker_bee` by default; BeeBot keeps coordination, state, replies, and
+privileged steps. Skip this only for explicit no-delegation or a blocker.
+
+### Worker Bee
+
+Each `worker_bee` run is scoped to one target workspace.
+
+Use `./bees/worker_bee` for workspace-scoped delegation. Review
+`./bees/worker_bee --help` for its current usage.
+
+Prompt format: task, relevant context from past state, delivery expectations,
+checks to run, and summary BeeBot needs back.
+
+`worker_bee` may have limited permissions. If it hits a privileged blocker, such
+as sandbox or push access, BeeBot may do that step itself and then relaunch the
+worker with updated context.
+
 ## Runtime Flow
+
+BeeBot must follow the session start and each turn routines below.
+
+### Session Start Routine
+
+Do this only once.
+
+```text
+1. Read `SOUL.md` and `MEMORY.md` if present.
+2. Create a BeeBot id.
+```
+
+### Each Turn Routine
 
 ```text
 1. Receive input.
-2. Startup routine: read `SOUL.md` and `MEMORY.md` if present; create a BeeBot id.
-3. Resolve/Create/Refresh relevant state (input, task, workspace, index).
-4. Check task state for a valid ownership token:
+2. Resolve/Create/Refresh relevant state (input, task, workspace, index).
+3. Check task state for a valid ownership token:
    If token is missing or expired:
       Owner:
-      a. Update task state: claim ownership with this BeeBot id and mark task in progress.
+      a. Create ownership token and update task state with:
+         i. Ownership claim.
+         ii. For workspace-scoped work, delegation decision: use `worker_bee` or record the exception reason.
       b. Repeat if latest state adds new work:
          i. Delegate/execute current work to completion, refreshing the token as needed.
          ii. Summarize result or progress.
          iii. Read latest state for inputs added during the previous work pass.
          iv. Branch:
              If the read finds new work: fold all of it into task state and
-             loop back to 4b.i.
+             loop back to 3b.i.
              Else: exit loop.
       c. Update state with final summary; reply to attached inputs as needed.
       d. Release ownership; remove trivial completed task state if appropriate;
@@ -142,24 +173,6 @@ lock immediately after state access; do not hold it across long-running work.
 - Trivial tasks are one-off work, such as a generic question, with no expected
   follow-up.
 
-## Delegation
-
-[`worker_bee`](bees/worker_bee) is a workspace-scoped agent. Use it by default
-for tasks in non-BeeBot-root workspaces; BeeBot keeps coordination, state,
-replies, and privileged actions.
-
-### Worker Bee
-
-Each `worker_bee` run is scoped to one target workspace.
-
-Use `./bees/worker_bee` for workspace-scoped delegation. The request should
-identify the target workspace and include the task, relevant context, delivery
-expectations, checks to run, and the summary BeeBot needs back.
-
-`worker_bee` may have limited permissions. If it hits a privileged blocker, such
-as sandbox or push access, BeeBot may do that step itself and then relaunch the
-worker with updated context.
-
 ## Extending Capabilities
 
 Keep `AGENTS.md` lean. When existing capability is missing, extend the narrowest
@@ -174,7 +187,7 @@ Use this placement guide:
 | Reusable code/script helper | `tools/<name>/` for BeeBot and repo-level inputs; workspace helper for workspace use |
 | Dynamic workflow | skills in relevant workspace agent-host dirs, such as `.agents/skills` for Codex agents (see [Codex skills](https://developers.openai.com/codex/skills)) or `.claude/skills` for Claude agents (see [Claude skills](https://docs.anthropic.com/en/docs/claude-code/skills)) |
 | External tool/API access or permission boundary | scoped MCP in the relevant workspace when `tools/` is not viable |
-| Different sandbox or request contract | new executable under `bees/` |
+| Different sandbox or request contract | new executable under `bees/`, details in `bees/README.md` |
 
 ## Delivery Rules
 
@@ -182,6 +195,8 @@ Use this placement guide:
   changes to it.
 - Treat `beebot_loop` as perpetual; do not restart it when inputs or helpers
   change.
+- Prefer `inputs.d/` over agent-native features, such as cron and scheduled
+  jobs, when both can provide similar functionality.
 - Simplify old structure when it gets in the way.
 - Ask before destructive, hard-to-reverse, or owner-visible promotion work such
   as commits and pushes.
