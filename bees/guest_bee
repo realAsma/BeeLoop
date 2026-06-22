@@ -10,10 +10,10 @@ source "$BEEBOT_ROOT/bees/args.sh"
 
 usage() {
   cat <<'EOF'
-usage: guest_bee [request-body]
+usage: guest_bee
 
 Runs a restricted public-safe bee.
-Request comes from stdin or one request-body argument.
+Reads the request body from stdin.
 EOF
 }
 

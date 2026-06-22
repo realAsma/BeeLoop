@@ -9,23 +9,14 @@ parse_request() {
   request=""
 
   if (($# > 0)); then
-    case "$#" in
-    1)
-      case "$1" in
-      -h|--help)
-        usage
-        exit 0
-        ;;
-      *)
-        request="${1//\\n/$'\n'}"
-        ;;
-      esac
-      ;;
-    *)
-      printf '%s: pass request as stdin or one request-body argument\n' "${0##*/}" >&2
-      exit 2
+    case "$1" in
+    -h|--help)
+      usage
+      exit 0
       ;;
     esac
+    printf '%s: pass request on stdin\n' "${0##*/}" >&2
+    exit 2
   elif [[ ! -t 0 ]]; then
     request="$(cat)"
   else

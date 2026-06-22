@@ -8,14 +8,14 @@ source "$BEEBOT_ROOT/bees/args.sh"
 
 usage() {
   cat <<'EOF'
-usage: beebot [request-body]
+usage: beebot
 
 Runs the owner-facing BeeBot.
-Request comes from stdin or one request-body argument.
+Reads the request body from stdin.
 EOF
 }
 
-engine="codex"
+engine="${BEEBOT_ENGINE:-codex}"
 
 handle_arg() {
   case "$1" in

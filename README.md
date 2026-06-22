@@ -66,7 +66,7 @@ tmux new -d -s beebot_loop './beebot_loop'
 ### Claude
 
 ```bash
-./beebot 'engine=claude'
+BEEBOT_ENGINE=claude ./beebot
 ```
 
 `beebot_loop` passes request bodies on stdin; bee headers in that body are
@@ -78,10 +78,10 @@ This repo ships an English specification document for adding the private Slack
 interface to BeeBot:
 [`specs/slack_private.md`](specs/slack_private.md).
 
-You can review it (optional) and ask BeeBot to build it:
+You can review it (optional) and ask BeeBot:
 
-```bash
-./beebot 'Can you build this? specs/slack_private.md'
+```text
+Can you build this? specs/slack_private.md
 ```
 
 ## TODO
@@ -90,5 +90,5 @@ You can review it (optional) and ask BeeBot to build it:
   feature yet. Manual invocation for testing:
 
   ```bash
-  ./bees/guest_bee "Public-safe prompt"
+  printf 'Public-safe prompt\n' | ./bees/guest_bee
   ```

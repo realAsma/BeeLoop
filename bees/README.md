@@ -11,9 +11,8 @@ bee=beebot
 Slack mention from the owner; see thread https://example.com/thread
 ```
 
-Bee scripts read a request body from stdin or one request-body argument. In a
-single argument, literal `\n` sequences are treated as newlines. A request body
-starts with `key=value` headers, followed by a blank line and prompt text:
+Bee scripts read a request body from stdin. A request body starts with
+`key=value` headers, followed by a blank line and prompt text:
 
 ```text
 key=value
