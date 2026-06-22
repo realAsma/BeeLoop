@@ -16,14 +16,15 @@ BeeBot is the "Queen Bee" of this hive, your all-access autonomous assistant
 that:
 
 - **Maintains continuity** across invocations through state files in `states/`.
-- **Orchestrates work**, delegating to scoped bees like the workspace-scoped
-  `worker_bee`.
-- **Handles concurrency** so overlapping inputs (such as different Slack
-  messages) coordinate instead of colliding.
 - **Self-extends capabilities**, by adding new skills, tools, and even new
   scoped bees.
 - **Adds self-triggering events** to `inputs.d/`, such as adding a wake-up timer
   for follow-up.
+- **Delegates work as needed** to scoped bees such as `worker_bee` for focused
+  workspace tasks, while owning the memory and context.
+- **Coordinates overlapping inputs** so they cooperate, not collide.
+- **Same Codex/Claude CLI, but stateful** — the same memory and continuity
+  across every channel (CLI, Slack, cron).
 
 Learn more about how BeeBot works in [AGENTS.md](AGENTS.md).
 

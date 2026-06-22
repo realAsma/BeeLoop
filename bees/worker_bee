@@ -11,12 +11,14 @@ usage() {
 usage: worker_bee [request-body]
 
 Runs a workspace-scoped worker.
+Optional headers: engine=codex|claude, mode=default|yolo, final_file=PATH, log_file=PATH.
 Request comes from stdin or one request-body argument.
 Prints only the worker final answer to stdout; writes worker transcript to log_file.
 EOF
 }
 
 engine="codex"
+mode="default"
 workspace=""
 final_file=""
 log_file=""
@@ -24,6 +26,7 @@ log_file=""
 handle_arg() {
   case "$1" in
   engine) engine="$2" ;;
+  mode) mode="$2" ;;
   workspace) workspace="$2" ;;
   final_file) final_file="$2" ;;
   log_file) log_file="$2" ;;
@@ -49,6 +52,21 @@ cd "$workspace_dir"
   exit 2
 }
 
+case "$mode" in
+""|default)
+  codex_sandbox="workspace-write"
+  claude_permission_mode="acceptEdits"
+  ;;
+yolo)
+  codex_sandbox="danger-full-access"
+  claude_permission_mode="bypassPermissions"
+  ;;
+*)
+  printf 'worker_bee: unknown mode %s\n' "$mode" >&2
+  exit 2
+  ;;
+esac
+
 run_dir="$BEEBOT_ROOT/logs/worker_bee"
 mkdir -p "$run_dir"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -61,14 +79,14 @@ case "$engine" in
 codex)
   codex exec \
     --output-last-message "$final_file" \
-    --sandbox workspace-write \
+    --sandbox "$codex_sandbox" \
     --skip-git-repo-check \
     -c 'project_root_markers=[]' \
     -- "$prompt" >"$log_file" 2>&1 || run_status=$?
   ;;
 claude)
   claude_settings="$(printf '{"claudeMdExcludes":["%s/CLAUDE.md"]}' "$BEEBOT_ROOT")"
-  claude -p "$prompt" --permission-mode acceptEdits --settings "$claude_settings" \
+  claude -p "$prompt" --permission-mode "$claude_permission_mode" --settings "$claude_settings" \
     >"$final_file" 2>"$log_file" || run_status=$?
   ;;
 *)

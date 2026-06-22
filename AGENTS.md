@@ -104,8 +104,9 @@ lock immediately after state access; do not hold it across long-running work.
 [`worker_bee`](bees/worker_bee) is a workspace-scoped agent.
 
 Delegate non-root workspace work, including read-only investigation, to
-`./bees/worker_bee` by default; BeeBot keeps coordination, state, replies, and
-privileged steps. Skip this only for explicit no-delegation or a blocker.
+`./bees/worker_bee` by default; BeeBot supplies workers with relevant state and
+memory context, and remains responsible for replies and state management. Skip
+this only for explicit no-delegation or a blocker.
 
 ### Worker Bee
 
@@ -114,12 +115,11 @@ Each `worker_bee` run is scoped to one target workspace.
 Use `./bees/worker_bee` for workspace-scoped delegation. Review
 `./bees/worker_bee --help` for its current usage.
 
-Prompt format: task, relevant context from past state, delivery expectations,
-checks to run, and summary BeeBot needs back.
+Prompt format: task description, relevant task context, delivery expectations,
+checks to run, and the summary BeeBot needs back.
 
-`worker_bee` may have limited permissions. If it hits a privileged blocker, such
-as sandbox or push access, BeeBot may do that step itself and then relaunch the
-worker with updated context.
+Use default worker_bee permissions by default. Use YOLO mode only when requested
+or needed, and record the reason in task state.
 
 ## Runtime Flow
 
