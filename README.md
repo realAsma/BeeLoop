@@ -1,25 +1,23 @@
-# BeeBot
+# BeeLoop
 
-BeeBot transforms the Codex/Claude CLI into a personal assistant that remembers
-its past and grows itself for your needs.
+BeeLoop is a perpetually running loop, a gateway to a hive of agents. It
+continuously listens for inputs, such as
+cron events or Slack messages, and dispatches each event to the appropriate bee
+agent.
+
+BeeBot is the special full-access bee in that hive. It transforms the
+Codex/Claude CLI into a personal assistant that remembers its past and grows
+itself for your needs.
 
 It is an event-triggered, stateful assistant like
 [OpenClaw](https://github.com/openclaw/openclaw), but built with the same
 minimalism as [SeedBot](https://github.com/RalphMao/seedbot).
 
-BeeBot is part of a hive of agents, scoped for access or workspace.
-`beebot_loop` continuously listens for non-empty input from scripts in
-`inputs.d/`, such as cron events or Slack messages, and dispatches each event to
-the appropriate bee agent.
-
-BeeBot is the "Queen Bee" of this hive, your all-access autonomous assistant
-that:
+BeeBot is your all-access autonomous assistant that:
 
 - **Maintains continuity** across invocations through state files in `states/`.
-- **Self-extends capabilities**, by adding new skills, tools, and even new
-  scoped bees.
-- **Adds self-triggering events** to `inputs.d/`, such as adding a wake-up timer
-  for follow-up.
+- **Extends itself as needed** with new skills, tools, scoped bees, and
+  scheduled follow-up inputs.
 - **Delegates work as needed** to scoped bees such as `worker_bee` for focused
   workspace tasks, while owning the memory and context.
 - **Coordinates overlapping inputs** so they cooperate, not collide.
@@ -50,17 +48,17 @@ BeeBot CLI for interactive uses (routed to Codex CLI):
 ./beebot
 ```
 
-Start the `beebot_loop` to listen for inputs (such as
+Start the `bee_loop` to listen for inputs (such as
 [Slack](#building-slack-support), timer):
 
 ```bash
-./beebot_loop
+./bee_loop
 ```
 
 Run the loop in the background with tmux/screen. Example:
 
 ```bash
-tmux new -d -s beebot_loop './beebot_loop'
+tmux new -d -s bee_loop './bee_loop'
 ```
 
 ### Claude
@@ -69,7 +67,7 @@ tmux new -d -s beebot_loop './beebot_loop'
 BEEBOT_ENGINE=claude ./beebot
 ```
 
-`beebot_loop` passes request bodies on stdin; bee headers in that body are
+`bee_loop` passes request bodies on stdin; bee headers in that body are
 parsed by the selected bee.
 
 ## Building Slack Support

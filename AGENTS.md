@@ -20,7 +20,7 @@ both your capabilities and the hive's as needed.
 
 - `inputs.d/`: executable adapters that turn source events into BeeBot dispatch
   envelopes.
-- `beebot_loop`: long-lived poll loop over `inputs.d/`.
+- `bee_loop`: long-lived poll loop over `inputs.d/`.
 - `bees/`: executable bees.
 - `states/`: shared continuity and coordination records.
 - `tools/`: repo-local code/script helpers for repeatable BeeBot and input
@@ -191,9 +191,9 @@ Use this placement guide:
 
 ## Delivery Rules
 
-- Frozen files: do not modify `beebot_loop` unless the owner explicitly asks for
+- Frozen files: do not modify `bee_loop` unless the owner explicitly asks for
   changes to it.
-- Treat `beebot_loop` as perpetual; do not restart it when inputs or helpers
+- Treat `bee_loop` as perpetual; do not restart it when inputs or helpers
   change.
 - Prefer `inputs.d/` over agent-native features, such as cron and scheduled
   jobs, when both can provide similar functionality.

@@ -11,7 +11,7 @@ while true; do
     if msg="$("$input")"; then
       :
     else
-      printf 'beebot_loop: input failed: %s\n' "$input_name" >&2
+      printf 'bee_loop: input failed: %s\n' "$input_name" >&2
       continue
     fi
     [[ -n "$msg" ]] || continue
@@ -19,10 +19,10 @@ while true; do
     bee_name="${first_line#bee=}"
     body="${msg#*$'\n\n'}"
 
-    printf '[%s] beebot_loop: input detected: %s bee=%s\n' \
-      "$(date -Is)" "$input_name" "$bee_name" | tee -a "$ROOT/logs/beebot_loop.log"
+    printf '[%s] bee_loop: input detected: %s bee=%s\n' \
+      "$(date -Is)" "$input_name" "$bee_name" | tee -a "$ROOT/logs/bee_loop.log"
     printf '%s' "$body" | "$ROOT/bees/$bee_name" \
-      >>"$ROOT/logs/beebot_loop.$bee_name.log" 2>&1 &
+      >>"$ROOT/logs/bee_loop.$bee_name.log" 2>&1 &
   done
-  sleep "${BEEBOT_INPUT_INTERVAL:-1}"
+  sleep "${BEELOOP_INPUT_INTERVAL:-1}"
 done

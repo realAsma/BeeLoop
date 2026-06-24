@@ -180,7 +180,7 @@ Setup must:
   opened or addressed.
 - At the end, send a short proactive hi DM to the allowed user. The message
   should ask the user to send a Slack DM back to test the path end to end, and
-  should state that `beebot_loop` must be running for that test.
+  should state that `bee_loop` must be running for that test.
 
 ## Testing And Verification
 
@@ -194,7 +194,7 @@ Verify the interface in this order:
 4. Confirm BeeBot can open or address the allowed user DM.
 5. Confirm the first-run proactive hi DM is delivered only to
    `SLACK_ALLOWED_USER_ID`.
-6. With `beebot_loop` running, send a DM from the allowed user and confirm the
+6. With `bee_loop` running, send a DM from the allowed user and confirm the
    Slack input emits exactly one small `bee=beebot` notification containing the
    permalink.
 7. Confirm BeeBot retrieves the message/thread context after the authenticated
