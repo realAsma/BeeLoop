@@ -23,7 +23,7 @@ BeeBot is your all-access autonomous assistant that:
 - **Coordinates overlapping inputs** so they cooperate, not collide.
 - **Same Codex/Claude CLI, but stateful** — the same memory and continuity
   across every channel (CLI, Slack, cron).
-- **Self-loops as needed, without telling** - uses whatever trigger is needed to do the high level job, you dont need to tell to use `/loop`
+- **Self-loops as needed, without telling** - uses whatever trigger is needed for the work.
 
 Learn more about how BeeBot works in [AGENTS.md](AGENTS.md).
 
