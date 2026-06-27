@@ -13,6 +13,11 @@ It is an event-triggered, stateful assistant like
 [OpenClaw](https://github.com/openclaw/openclaw), but built with the same
 minimalism as [SeedBot](https://github.com/RalphMao/seedbot).
 
+For more context, see the BeeLoop blog posts:
+[Fundamental Pieces for Building Any Claw or Loop](https://realasma.github.io/blog/2026/06/26/fundamental-pieces-for-building-any-claw-or-loop/)
+and
+[BeeLoop: My Loop That Engineers My Other Loops](https://realasma.github.io/blog/2026/06/26/beeloop-my-loop-that-engineers-my-other-loops/).
+
 BeeBot is your all-access autonomous assistant that:
 
 - **Maintains continuity** across invocations through state files in `states/`.
