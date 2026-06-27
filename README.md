@@ -16,8 +16,7 @@ minimalism as [SeedBot](https://github.com/RalphMao/seedbot).
 BeeBot is your all-access autonomous assistant that:
 
 - **Maintains continuity** across invocations through state files in `states/`.
-- **Extends itself as needed** with new skills, tools, scoped bees, and
-  scheduled follow-up inputs.
+- **Extends itself as needed** with new skills, tools, or scoped bees.
 - **Delegates work as needed** to scoped bees such as `worker_bee` for focused
   workspace tasks, while owning the memory and context.
 - **Coordinates overlapping inputs** so they cooperate, not collide.
