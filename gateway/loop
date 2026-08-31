@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#
+# The poll loop: the front door of BeeBot.
+#
+# Every INTERVAL seconds it runs each executable in inputs.d/. An adapter that
+# has nothing to report prints nothing; one that does prints a single envelope
+# on stdout (see inputs.d/README.md). Each envelope carrying a non-empty `msg`
+# is piped, in its own backgrounded process, to DISPATCH.
+#
+# This file is deliberately dumb. It parses exactly one field -- `msg`, and only
+# to decide whether there is anything to send -- and forwards the bytes it
+# received verbatim. The envelope schema lives downstream, so this file does not
+# change when the schema does.
+
+set -euo pipefail
+
+BEEBOT_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd -P)"
+DISPATCH="$BEEBOT_ROOT/dispatch/dispatch"
+INTERVAL="${BEEBOT_INPUT_INTERVAL:-1}"
+
+mkdir -p "$BEEBOT_ROOT/inputs.d" "$BEEBOT_ROOT/logs"
+shopt -s nullglob
+
+log() {
+  printf '[%s] loop: %s\n' "$(date -Is)" "$1" \
+    | tee -a "$BEEBOT_ROOT/logs/loop.log" >&2
+}
+
+log "started; root=$BEEBOT_ROOT interval=${INTERVAL}s dispatch=$DISPATCH"
+
+while true; do
+  for input in "$BEEBOT_ROOT/inputs.d"/*; do
+    # Only executables run. README.md and *.sample are mode 644 and so are
+    # invisible here -- chmod +x is the enable switch for an adapter.
+    [[ -f "$input" && -x "$input" ]] || continue
+    name="$(basename "$input")"
+
+    # A failing adapter is logged and skipped. `set -e` must not kill the loop
+    # over one bad input, hence the `if !` guard rather than a bare call.
+    if ! envelope="$("$input" 2>>"$BEEBOT_ROOT/logs/inputs.log")"; then
+      log "input failed: $name"
+      continue
+    fi
+
+    [[ -n "$envelope" ]] || continue   # idle: the adapter printed nothing
+
+    # `msg=` is the last header; everything after it is the body.
+    msg="$(printf '%s\n' "$envelope" | sed -n '/^msg=/,$p' | sed '1s/^msg=//')"
+    [[ -n "${msg//[[:space:]]/}" ]] || continue   # headers, but nothing to say
+
+    log "input fired: $name"
+    printf '%s' "$envelope" \
+      | "$DISPATCH" >>"$BEEBOT_ROOT/logs/dispatch.log" 2>&1 &
+  done
+  sleep "$INTERVAL"
+done

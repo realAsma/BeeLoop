@@ -1,0 +1,44 @@
+# Track nothing by default; name the source explicitly below.
+#
+# This way round because the two sets are shaped differently. The SOURCE is a
+# handful of directories that changes about never. The GENERATED half cannot be
+# enumerated at all: agents work in directories named by each role's `cwd` in
+# Configs/roles/<role>/role.toml, so a new role invents a new output directory
+# without touching this file. Denylisting an open-ended set means every new
+# role is one forgotten line away from committing an agent's workspace.
+#
+# The cost, stated plainly: a new source file in a directory NOT listed below
+# is invisible to git, and `git add` will say nothing about it. If you add a
+# top-level directory, add it here in the same commit.
+*
+
+# Descend into directories anyway. Without this nothing below can match: git
+# does not look inside an ignored directory, so the negations never get a
+# chance. Directories are not objects in git, so this tracks nothing by itself.
+!*/
+
+# The source.
+!/agents/**
+!/dispatch/**
+!/gateway/**
+!/configs/**
+!/tests/**
+
+# The adapters themselves are deployment state, but the envelope format they
+# have to produce is not.
+!/inputs.d/README.md
+
+# This file, and the front door.
+!/.gitignore
+!/README.md
+
+# Re-ignored last: the negations above are broad enough to sweep these back in
+# from inside a source directory, and a later rule wins.
+# Its own repository, cloned in. See the README.
+/state_store/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://beebot.local/agents/Agent.json",
+  "title": "BeeBot agent record",
+  "description": "Validates and documents runtime/agents/<agent_id>.json for an ordinary agent. One file per agent class, named for it: a class with a different record shape brings its own schema alongside this one, so adding it touches nothing here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "agent_id",
+    "role",
+    "backend",
+    "cwd",
+    "session_id",
+    "status",
+    "session_since",
+    "session_turns",
+    "created",
+    "last_turn",
+    "turns",
+    "cost_usd"
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "Lowercase hyphenated. agent_id is a v7 so a directory listing is a creation-order audit; session_id is whatever the backend minted and is opaque to everything but its adapter."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "description": "ISO-8601 UTC, second resolution, always 'Z'. Fixed width on purpose: lexicographic order is then chronological, so these compare as plain strings."
+    }
+  },
+  "properties": {
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Which class runs this agent, spelled exactly as the class is named -- so this record's own schema is assets/<type>.json. The outer key is the field; the inner one is JSON Schema's keyword. Pinned at creation, so editing a role's `type` later cannot change what an existing agent already is."
+    },
+    "agent_id": {
+      "$ref": "#/$defs/uuid",
+      "description": "The routing key, the chat address, and the lease all at once. Unguessable because knowing an address is the permission."
+    },
+    "role": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Names a directory under Configs/roles/. Deliberately separate from `type`: role selects a DIRECTORY and is configuration, type selects a CLASS and is code. Many roles may share one type."
+    },
+    "instance": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Which of several agents sharing one (source, cwd, role) this is. Descriptive, not authoritative -- runtime/routes.jsonl decides routing and this only records its answer. Absent means the default agent for that triple."
+    },
+    "backend": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Which adapter speaks for this agent. Read at creation from the role, then fixed -- a session cannot migrate between providers."
+    },
+    "cwd": {
+      "type": "string",
+      "minLength": 1,
+      "description": "BeeBot state, not the provider's. A provider may adopt whatever directory it was last invoked from, so this is replayed on every call and never inferred back."
+    },
+    "session_id": {
+      "$ref": "#/$defs/uuid",
+      "description": "The whole of a stateless backend. Mortal: replaced by refresh under a stable agent_id. Losing it strands a conversation that still exists on the provider's disk."
+    },
+    "status": {
+      "enum": [
+        "prepared",
+        "active",
+        "closed"
+      ],
+      "description": "`prepared` is load-bearing: it is the ONLY create-versus-resume guard, because reusing a live session id is guarded by the provider only within one project slug and otherwise forks the conversation silently."
+    },
+    "session_since": {
+      "$ref": "#/$defs/timestamp",
+      "description": "When the CURRENT session began. Reset by refresh, and the only thing an age-triggered refresh has to compare against."
+    },
+    "session_turns": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Model calls on the current session. Reset by refresh. The honest proxy for context growth if auto-compaction means a context-full error never arrives."
+    },
+    "created": {
+      "$ref": "#/$defs/timestamp",
+      "description": "The agent's birth. Paired with session_since this is the whole agent-outlives-session idea: one is permanent, the other is replaced beneath it."
+    },
+    "last_turn": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Null until the first model call. A parked delivery is not a turn and does not stamp this."
+    },
+    "turns": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Model calls over the agent's whole life. One spin may make several, one per drain iteration."
+    },
+    "cost_usd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Accumulated from what each call reported. Advisory: whether the provider's figure is per-turn or per-session is only weakly established."
+    }
+  }
+}

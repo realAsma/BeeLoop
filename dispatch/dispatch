@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#
+# The loop's target. A shim, not the dispatcher: it exists only to pick the
+# interpreter, because the loop inherits whatever environment it was started in
+# and the default python there may not be the one holding our dependencies.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd -P)"
+cd "$ROOT"
+
+if command -v python_pwd >/dev/null 2>&1; then
+  exec python_pwd dispatch/dispatch.py
+fi
+exec python dispatch/dispatch.py
