@@ -57,7 +57,17 @@ class ClaudeBackend(Backend):
     def deliver(self, session: Session, inputs: Sequence[InputItem]) -> Delivery:
         argv = _argv(session, _render(inputs))
         done = subprocess.run(
-            argv, cwd=str(session.cwd), capture_output=True, text=True
+            argv,
+            cwd=str(session.cwd),
+            capture_output=True,
+            text=True,
+            # The binding, and the only thing this backend tells the plugin.
+            # Verified against 2.1.257: the CLI passes its own environment down
+            # to stdio MCP servers, so the loop server reads this and the
+            # inherited BEEBOT_ROOT out of it. Out-of-band on purpose -- an
+            # argument or a prompt line would let the model inside choose whose
+            # identity it sends under.
+            env={**os.environ, "BEEBOT_AGENT_DIR": str(session.agent_dir)},
         )
         if done.returncode != 0:
             raise BackendError((done.stderr or done.stdout).strip())
@@ -100,10 +110,14 @@ def _argv(session: Session, prompt: str) -> list[str]:
     command line has to be passed again, forever.
 
     What survives is DISCOVERY. The process is new every batch and reads
-    CLAUDE.md, skills and MCP config out of `cwd` each time -- verified the same
-    way, with a codeword that was only ever in a discovered CLAUDE.md. So the
-    default path passes none of that and lets the directory speak, and `cwd` is
-    the subprocess's, never a flag.
+    CLAUDE.md, skills and MCP config out of `cwd` and the installed plugins each
+    time -- verified the same way, with a codeword that was only ever in a
+    discovered CLAUDE.md. So this passes none of that: no `--plugin-dir` and no
+    `--mcp-config`, because the loop plugin is installed rather than handed over
+    per invocation, and `cwd` is the subprocess's, never a flag. What is left is
+    the session, the profile and the model -- the three things the directory
+    cannot know. The per-agent binding the plugin needs travels in the
+    environment `deliver` builds, not here.
     """
     mode = _PROFILES.get(session.permissions)
     if mode is None:

@@ -1,9 +1,10 @@
-"""The agent, and the one file it is.
+"""The agent, and its durable files.
 
-An `Agent` object is a per-tick projection of `runtime/agents/<id>.json` plus its
-role's static config. Nothing durable is held in memory, because the gateway
-exits between ticks -- so if this class ever holds a PID, a subprocess handle, a
-lock handle or a queue, it cannot be reconstructed and the design is broken.
+An `Agent` object is a per-tick projection of
+`runtime/agents/<id>/record.json` plus its role's static config. Nothing durable
+is held in memory, because the gateway exits between ticks -- so if this class
+ever holds a PID, a subprocess handle, a lock handle or a queue, it cannot be
+reconstructed and the design is broken.
 
 The backend is stateless, which makes that record the only durable thing in the
 system: the transcript still exists on the provider's disk, but it is reachable
@@ -50,6 +51,7 @@ __all__ = [
     "UnknownAgent",
     "UnknownRole",
     # paths
+    "agent_path",
     "queue_path",
     "record_path",
     "root",
@@ -61,7 +63,7 @@ __all__ = [
     "new_agent_id",
     "now",
     "read",
-    "record_lock",
+    "files_lock",
     "update",
     "validate",
     "write",
@@ -123,16 +125,26 @@ def root() -> Path:
 
     A function rather than a constant so a test can point BEEBOT_ROOT somewhere
     else after this module is imported.
+
+    Required, with nothing to fall back to. Deriving it from this file's
+    location would answer with the code root -- site-packages, once this is
+    pip-installed -- which is a real, writable directory that is simply the
+    wrong tree, so every path built on it would be wrong quietly. There is no
+    way to guess the deployment tree, so the only honest answer is to refuse.
     """
-    if given := os.environ.get("BEEBOT_ROOT"):
-        found = Path(given)
-        if not found.is_dir():
-            raise AgentError(
-                f"BEEBOT_ROOT is set to {given!r}, which is not a directory; "
-                f"unset it or point it at the BeeBot5.0 tree"
-            )
-        return found.resolve()
-    return Path(__file__).resolve().parents[1]
+    given = os.environ.get("BEEBOT_ROOT")
+    if not given:
+        raise AgentError(
+            "BEEBOT_ROOT is not set; point it at the BeeBot deployment tree "
+            "-- the directory holding runtime/, logs/, inputs.d/ and configs/"
+        )
+    found = Path(given)
+    if not found.is_dir():
+        raise AgentError(
+            f"BEEBOT_ROOT is set to {given!r}, which is not a directory; "
+            f"point it at the BeeBot deployment tree"
+        )
+    return found.resolve()
 
 
 def runtime(*parts: str) -> Path:
@@ -141,12 +153,17 @@ def runtime(*parts: str) -> Path:
     return directory
 
 
+def agent_path(agent_id: str) -> Path:
+    """An agent's directory, resolved without creating it."""
+    return root().joinpath("runtime", "agents", agent_id)
+
+
 def record_path(agent_id: str) -> Path:
-    return runtime("agents") / f"{agent_id}.json"
+    return agent_path(agent_id) / "record.json"
 
 
 def queue_path(agent_id: str) -> Path:
-    return runtime("queue") / f"{agent_id}.jsonl"
+    return agent_path(agent_id) / "queue.jsonl"
 
 
 def now() -> str:
@@ -175,14 +192,13 @@ def new_agent_id() -> str:
 
 
 @contextmanager
-def record_lock() -> Iterator[None]:
+def files_lock(agent_id: str) -> Iterator[None]:
     """Microseconds, around a read-modify-write.
 
-    Separate from the delivery lock on purpose: conflating them would make one
-    agent's turn block every other agent's dispatch, and would leave no way for
-    a tool to write to a record while that agent's turn is still running.
+    Separate from the model lock on purpose: conflating them would leave no way
+    for a tool to write to a record while that agent's turn is still running.
     """
-    with open(runtime("agents") / ".lock", "a+") as handle:
+    with open(agent_path(agent_id) / "files.lock", "a+") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
         try:
             yield
@@ -191,10 +207,10 @@ def record_lock() -> Iterator[None]:
 
 
 class Turn:
-    """The delivery lock, as an object that can be released early.
+    """The model lock, as an object that can be released early.
 
     A context manager alone will not do: the holder has to give this up from
-    *inside* the record lock, so that an arrival cannot park itself between the
+    *inside* the files lock, so that an arrival cannot park itself between the
     holder finding the queue empty and the holder letting go.
     """
 
@@ -217,8 +233,7 @@ class Turn:
 
 def _take_turn(agent_id: str) -> Turn | None:
     """Try to become the one process delivering to this agent."""
-    path = runtime("locks") / f"{agent_id}"
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = agent_path(agent_id) / "model.lock"
     handle = open(path, "a+")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -287,13 +302,13 @@ def update(
     fields: Mapping[str, Any] | None = None,
     bump: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
-    """Read-modify-write under the record lock.
+    """Read-modify-write under the files lock.
 
     It re-reads rather than writing a caller's in-memory copy, because a tool
     running inside a live turn will write to this same file and a blind write
     would erase it.
     """
-    with record_lock():
+    with files_lock(agent_id):
         record = read(agent_id)
         record.update(fields or {})
         for key, amount in (bump or {}).items():
@@ -344,10 +359,10 @@ def _take_queue(agent_id: str) -> list[InputItem]:
 def claim(agent_id: str, inputs: Sequence[InputItem]) -> Turn | None:
     """Become the holder, or park and walk away.
 
-    Both halves happen under the record lock, which is what closes the race: an
+    Both halves happen under the files lock, which is what closes the race: an
     arrival cannot append between a holder checking the queue and releasing.
     """
-    with record_lock():
+    with files_lock(agent_id):
         held = _take_turn(agent_id)
         if held is None:
             _park(agent_id, inputs)
@@ -358,10 +373,10 @@ def claim(agent_id: str, inputs: Sequence[InputItem]) -> Turn | None:
 def drain_or_release(agent_id: str, held: Turn) -> list[InputItem]:
     """Take the next batch, or give up the turn.
 
-    The release happens INSIDE the record lock, so nothing can park itself into
+    The release happens INSIDE the files lock, so nothing can park itself into
     a queue this has just declared empty.
     """
-    with record_lock():
+    with files_lock(agent_id):
         batch = _take_queue(agent_id)
         if not batch:
             held.release()
@@ -478,12 +493,12 @@ def seed(source: Path, destination: Path) -> None:
 
 
 class Agent:
-    """One agent, and the single file it is.
+    """One agent, reconstructed from its durable files.
 
-    A per-tick projection of runtime/agents/<id>.json plus its role's static
-    config. Nothing durable is held in memory, because the gateway exits between
-    ticks -- so a PID, a subprocess handle, a lock handle or a queue held here
-    would all make the agent unreconstructible.
+    A per-tick projection of runtime/agents/<id>/record.json plus its role's
+    static config. Nothing durable is held in memory, because the gateway exits
+    between ticks -- so a PID, a subprocess handle, a lock handle or a queue
+    held here would all make the agent unreconstructible.
     """
 
     # Names a file in assets/. Inherited, so a subclass that only changes
@@ -552,9 +567,10 @@ class Agent:
         seed(role.template, where)
 
         stamp = now()
+        agent_id = new_agent_id()
         record = {
             "type": cls.__name__,
-            "agent_id": new_agent_id(),
+            "agent_id": agent_id,
             "role": role_name,
             "backend": role.backend,
             # Already resolved by `workspace`, which the dispatcher calls too --
@@ -570,6 +586,13 @@ class Agent:
             "cost_usd": 0.0,
             **extra,
         }
+        directory = agent_path(agent_id)
+        directory.mkdir(parents=True)
+        role_config = role.directory / "role.toml"
+        _write(
+            directory / "config.toml",
+            role_config.read_text("utf-8") if role_config.exists() else "",
+        )
         write(record, cls.SCHEMA)
         return record
 
@@ -668,6 +691,7 @@ class Agent:
         """
         return Session(
             agent_id=self.agent_id,
+            agent_dir=agent_path(self.agent_id).resolve(),
             session_id=self.session_id,
             prepared=self.status == PREPARED,
             cwd=self.cwd,

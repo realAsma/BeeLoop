@@ -11,11 +11,11 @@ that matter most run it from more than one process.
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from pathlib import Path
 from typing import Sequence
 
+from .._agent import root
 from .base import Backend, BackendError, Delivery, Fault, InputItem, Session
 
 
@@ -54,11 +54,12 @@ class FakeBackend(Backend):
 def log_path(agent_id: str) -> Path:
     """Where this backend writes what it was handed.
 
-    Resolved from the environment rather than by importing the agent layer:
-    a backend that reaches upward is one `dispatch.py` can be made to depend on
-    sideways, and this package is meant to be a leaf.
+    Through `root()` rather than reading BEEBOT_ROOT here, even though that
+    costs this package its leaf status: `root()` is where the variable is
+    checked, and a second reader means the fake would happily log into an
+    unset or bogus root that every other path in the tree refuses.
     """
-    return Path(os.environ["BEEBOT_ROOT"]) / "runtime" / "fake" / f"{agent_id}.jsonl"
+    return root() / "runtime" / "fake" / f"{agent_id}.jsonl"
 
 
 def turns(agent_id: str) -> list[list[list[str]]]:

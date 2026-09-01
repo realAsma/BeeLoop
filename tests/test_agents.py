@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-import agents as ag
-from agents import _agent  # the private queue helper this file patches
-from agents.backends import InputItem, fake
+from beebot import agents as ag
+from beebot.agents import _agent  # the private queue helper this file patches
+from beebot.agents.backends import InputItem, fake
 
 
 def orchestrator(role: str = "orchestrator", **kwargs) -> ag.Agent:
@@ -61,6 +61,15 @@ def test_root_rejects_a_path_that_is_not_a_directory(monkeypatch, tmp_path):
     monkeypatch.setenv("BEEBOT_ROOT", str(tmp_path / "nope"))
     with pytest.raises(ag.AgentError, match="BEEBOT_ROOT"):
         ag.root()
+
+
+def test_resolving_an_agent_path_does_not_create_it():
+    missing = "0198ff2a-0000-7000-8000-000000000000"
+
+    path = ag.agent_path(missing)
+
+    assert path == ag.root() / "runtime" / "agents" / missing
+    assert not path.exists()
 
 
 def test_agent_ids_are_version_7_and_ordered_by_time():
@@ -228,6 +237,26 @@ def test_creating_an_agent_writes_the_handle_before_anything_is_spent():
     assert fake.turns(agent.agent_id) == []
 
 
+def test_an_agent_owns_its_record_and_a_snapshot_of_its_role_config(beebot_root):
+    agent = orchestrator()
+    directory = ag.agent_path(agent.agent_id)
+    role_config = beebot_root / "configs" / "roles" / "orchestrator" / "role.toml"
+    copied_config = role_config.read_text("utf-8")
+
+    assert ag.record_path(agent.agent_id) == directory / "record.json"
+    assert ag.queue_path(agent.agent_id) == directory / "queue.jsonl"
+    assert (directory / "config.toml").read_text("utf-8") == copied_config
+
+    role_config.write_text('permissions = "read"\n', encoding="utf-8")
+    assert (directory / "config.toml").read_text("utf-8") == copied_config
+
+
+def test_an_empty_role_creates_an_empty_agent_config():
+    agent = worker()
+
+    assert (ag.agent_path(agent.agent_id) / "config.toml").read_text("utf-8") == ""
+
+
 def test_update_rereads_so_a_write_during_a_turn_is_not_erased():
     """A tool writing into a live turn must not be clobbered by the turn.
 
@@ -250,6 +279,29 @@ def test_an_unknown_agent_names_the_file_it_looked_for():
 
 
 # ------------------------------------------------------------------ the locks
+
+
+def test_queue_and_locks_live_with_the_agent():
+    agent = as_fake(orchestrator())
+    held = ag.claim(agent.agent_id, [])
+    assert held is not None
+    try:
+        parked = ag.restore(agent.agent_id).spin([InputItem("late", "wait")])
+        assert parked.parked is True
+
+        directory = ag.agent_path(agent.agent_id)
+        assert {path.name for path in directory.iterdir()} == {
+            "config.toml",
+            "files.lock",
+            "model.lock",
+            "queue.jsonl",
+            "record.json",
+        }
+        assert not (ag.root() / "runtime" / "queue").exists()
+        assert not (ag.root() / "runtime" / "locks").exists()
+        assert not (ag.root() / "runtime" / "agents" / ".lock").exists()
+    finally:
+        held.release()
 
 
 # ------------------------------------------------------------- spin and drain
@@ -320,7 +372,7 @@ def test_an_arrival_cannot_slip_between_the_empty_check_and_the_release():
     """The one race the design exists to close.
 
     The holder finds the queue empty; an arrival parks in the instant before the
-    lock is dropped. Without the record lock spanning both, nobody drains it.
+    lock is dropped. Without the files lock spanning both, nobody drains it.
     """
     agent = as_fake(orchestrator())
     reached = threading.Event()
@@ -336,7 +388,7 @@ def test_an_arrival_cannot_slip_between_the_empty_check_and_the_release():
 
     def arrive():
         reached.wait(5)
-        # Blocks on the record lock until the holder has released the turn.
+        # Blocks on the files lock until the holder has released the turn.
         started = time.monotonic()
         ag.restore(agent.agent_id).spin([InputItem("late", "arrived")])
         arrive.took = time.monotonic() - started

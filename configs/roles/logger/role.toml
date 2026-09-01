@@ -5,3 +5,11 @@
 backend     = "claude_code"
 permissions = "yolo"
 cwd         = "test_workspace"
+
+[messaging.send]
+roles = []
+ids = []
+
+[messaging.receive]
+roles = []
+ids = []

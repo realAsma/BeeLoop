@@ -3,17 +3,23 @@ answers. Nothing here spawns the CLI."""
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from agents.backends import BackendError, InputItem, Session
-from agents.backends.claude import ClaudeBackend, _argv, _render
+from beebot.agents.backends import BackendError, InputItem, Session
+from beebot.agents.backends.claude import ClaudeBackend, _argv, _render
 
 
 def session(**kwargs) -> Session:
     base = dict(
         agent_id="0198ff2a-0000-7000-8000-000000000000",
+        agent_dir=Path(
+            "/tmp/runtime/agents/0198ff2a-0000-7000-8000-000000000000"
+        ),
         session_id="f2e0f791-0000-4000-8000-000000000000",
         prepared=True,
         cwd=Path("/tmp"),
@@ -59,6 +65,34 @@ def test_the_config_is_replayed_identically_on_every_call():
     ]
     for flag in ("--permission-mode", "--model", "--output-format"):
         assert flag in first and flag in tenth
+
+
+def test_the_plugin_is_installed_rather_than_passed_per_invocation():
+    """`--plugin-dir` is documented as this-session-only and `--mcp-config` is
+    additive; neither is needed once the plugin is installed, and
+    `--strict-mcp-config` would disable the operator's own servers."""
+    argv = _argv(session(), "hi")
+    for flag in ("--plugin-dir", "--mcp-config", "--strict-mcp-config"):
+        assert flag not in argv
+
+
+def test_deliver_binds_the_child_to_this_agents_own_directory(monkeypatch):
+    """The whole design rests on this: the CLI passes its environment to the
+    stdio MCP servers it starts, so this is what the loop server binds to."""
+    spawned = {}
+
+    def run(argv, **kwargs):
+        spawned.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0, json.dumps({"session_id": "s"}), "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    current = session()
+    ClaudeBackend().deliver(current, [InputItem("slack:D0B8:1", "hi")])
+
+    assert spawned["env"]["BEEBOT_AGENT_DIR"] == str(current.agent_dir)
+    assert current.agent_dir.name == current.agent_id
+    # Inherited, not replaced: the child needs PATH, HOME and BEEBOT_ROOT.
+    assert spawned["env"]["PATH"] == os.environ["PATH"]
 
 
 def test_a_permission_profile_outside_the_catalog_is_refused_before_spending():

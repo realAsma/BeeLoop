@@ -1,0 +1,8 @@
+{
+  "name": "beebot-loop",
+  "version": "1.0.0",
+  "description": "Asynchronous messaging between BeeLoop agents.",
+  "author": {
+    "name": "BeeBot"
+  }
+}

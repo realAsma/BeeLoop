@@ -1,0 +1,14 @@
+{
+  "name": "beebot",
+  "owner": {"name": "BeeBot"},
+  "plugins": [
+    {
+      "name": "beebot-loop",
+      "source": "./plugins/beebot-loop",
+      "description": "Asynchronous messaging between BeeLoop agents: two MCP tools and the skill that drives them.",
+      "version": "1.0.0",
+      "category": "productivity",
+      "keywords": ["messaging", "agents", "routing", "beebot"]
+    }
+  ]
+}

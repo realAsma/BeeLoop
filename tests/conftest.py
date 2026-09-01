@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import shutil
-import sys
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+# The source tree, for its checked-in `configs/` only. Not a BEEBOT_ROOT: the
+# packages come from the install, and each test gets a root of its own below.
+SOURCE = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +20,7 @@ def beebot_root(tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatc
     role directory cannot corrupt the checked-in one.
     """
     home = Path(str(tmp_path))
-    shutil.copytree(ROOT / "configs", home / "configs")
+    shutil.copytree(SOURCE / "configs", home / "configs")
     # Made here rather than checked in: git cannot track an empty directory,
     # and empty is the whole point -- `worker` is the role that says nothing.
     (home / "configs" / "roles" / "worker").mkdir(exist_ok=True)

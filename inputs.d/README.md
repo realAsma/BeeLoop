@@ -14,10 +14,8 @@ gitignored apart from this file. Copy `example.sample` to start one.
 ## The envelope
 
 ```text
+# A review comment landed on a pull request.
 role=orchestrator
-agent_id=
-cwd=
-instance=
 source=review:example/project:123
 msg=Pull request 123 got a new review comment.
 See https://example.com/example/project/pull/123 for the thread.
@@ -25,6 +23,12 @@ See https://example.com/example/project/pull/123 for the thread.
 
 Header lines are single-line `key=value`. **`msg=` is always last** — everything
 after it, newlines included, is the body. There is no blank-line separator.
+
+The table below is the whole field set: any other header key is refused rather
+than ignored, so a misspelling stops the envelope instead of quietly routing it
+somewhere plausible. Omit a field you do not use — writing it empty means the
+same thing, but says less. A header line beginning `#` is a comment and may
+contain `=`; past `msg=` there are no comments, only body.
 
 | Field | Meaning |
 |---|---|

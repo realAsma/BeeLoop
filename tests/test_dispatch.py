@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-import dispatch.dispatch as dsp
-import dispatch.envelope as env
-import dispatch.routes as rt
-import agents as ag
+from beebot import agents as ag
+import beebot.dispatch.dispatch as dsp
+import beebot.dispatch.envelope as env
+import beebot.dispatch.routes as rt
 from tests.test_agents import as_fake, poke
 
 
@@ -25,7 +25,7 @@ def routes(beebot_root, monkeypatch):
 
 
 def agent_count() -> int:
-    return len(list(ag.runtime("agents").glob("*.json")))
+    return len(list(ag.runtime("agents").glob("*/record.json")))
 
 
 # `worker` is the empty role, so it names no cwd and every envelope must.
@@ -73,6 +73,17 @@ def test_a_missing_trailing_newline_parses():
     assert env.parse(envelope(msg="hi")).msg == "hi"
 
 
+@pytest.mark.parametrize(
+    "original",
+    [
+        env.Envelope("worker", None, "timer:t", "line one\nline two", WORKSPACE),
+        env.Envelope(None, "01a0-x", "agent:sender", "continue"),
+    ],
+)
+def test_serialized_envelopes_round_trip(original):
+    assert env.parse(env.serialize(original)) == original
+
+
 def test_empty_headers_are_absent_not_present():
     """Adapters write `agent_id=` with nothing after it as a matter of course."""
     parsed = env.parse(envelope(agent_id=""))
@@ -98,6 +109,27 @@ def test_instance_and_agent_id_together_are_refused():
     caller holding both has already contradicted itself."""
     with pytest.raises(env.EnvelopeError, match="both instance="):
         env.parse(envelope(role="", cwd="", agent_id="01a0-x", instance="a"))
+
+
+def test_an_unknown_field_is_refused_and_named():
+    """The whole point of a closed field set: `roll=worker` used to be dropped in
+    silence and routed to the default role, with nothing to read afterwards."""
+    with pytest.raises(env.EnvelopeError, match="roll"):
+        env.parse(envelope(roll="worker"))
+
+
+def test_a_comment_header_is_ignored_even_when_it_contains_an_equals_sign():
+    """The letterbox is hand-edited prose, and its comments talk about `msg=`.
+    Without the `#` skip each one would land in the field set as junk."""
+    parsed = env.parse("# talks about role=orchestrator\n" + envelope())
+    assert parsed.role == "worker"
+
+
+def test_a_comment_line_in_the_body_survives_verbatim():
+    """The skip is a header rule. Past `msg=` nothing is inspected, or a body
+    quoting a config file would come out with lines missing."""
+    body = "look at:\n# not a comment here\ndone"
+    assert env.parse(envelope(msg=body)).msg == body
 
 
 def test_an_envelope_with_no_source_is_refused():

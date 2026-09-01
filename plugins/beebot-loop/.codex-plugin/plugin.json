@@ -1,0 +1,27 @@
+{
+  "name": "beebot-loop",
+  "version": "1.0.0",
+  "description": "Asynchronous messaging between BeeLoop agents.",
+  "author": {
+    "name": "BeeBot"
+  },
+  "skills": "./skills/",
+  "mcpServers": {
+    "beebot-loop": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["server.py"],
+      "cwd": ".",
+      "env_vars": ["BEEBOT_AGENT_DIR", "BEEBOT_ROOT"]
+    }
+  },
+  "interface": {
+    "displayName": "BeeBot Loop",
+    "shortDescription": "Message other BeeLoop agents.",
+    "longDescription": "Send asynchronous messages between explicitly authorized BeeLoop agents.",
+    "developerName": "BeeBot",
+    "category": "Productivity",
+    "capabilities": ["Write"],
+    "defaultPrompt": ["Send a message to another BeeLoop agent."]
+  }
+}

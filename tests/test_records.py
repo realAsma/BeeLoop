@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-import agents as ag
+from beebot import agents as ag
 from tests.test_agents import as_fake, orchestrator, poke, worker
 
 

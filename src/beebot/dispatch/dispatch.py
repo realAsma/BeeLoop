@@ -11,24 +11,19 @@ envelopes.
 
 Nothing durable is held here. The process exits after every envelope and every
 object is rehydrated from disk on the next one.
+
+Run as `python -m beebot.dispatch.dispatch`, never as a path, so imports resolve
+through the installed package rather than the script's directory.
 """
 
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-# Drop `dispatch/` before adding the root. Run as a script it is sys.path[0],
-# and the regular module `dispatch.py` sitting there beats the root namespace
-# package -- which makes `dispatch.envelope` resolve into this file and fail.
-_here = str(Path(__file__).resolve().parent)
-sys.path[:] = [entry for entry in sys.path if entry not in ("", ".", _here)]
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import agents as ag  # noqa: E402
-from agents.backends import InputItem  # noqa: E402
-from dispatch.envelope import Envelope, parse  # noqa: E402
-from dispatch.routes import Route, agent_for  # noqa: E402
+from beebot import agents as ag
+from beebot.agents.backends import InputItem
+from beebot.dispatch.envelope import Envelope, parse
+from beebot.dispatch.routes import Route, agent_for
 
 
 def dispatch(envelope: Envelope) -> str:

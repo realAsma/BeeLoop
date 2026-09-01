@@ -10,12 +10,58 @@ Architecture notes to follow. For the envelope format, see `inputs.d/README.md`.
 ## Running it
 
 ```sh
+pip install -e .          # src/beebot/ -- the installed code
+export BEEBOT_ROOT="$PWD" # runtime/, logs/, inputs.d/, configs/ -- the tree
 gateway/loop &            # poll adapters, dispatch what they produce
 $EDITOR letterbox         # any edit posts it once; `touch letterbox` re-sends
 tail -f logs/dispatch.log
 ```
 
-Tests: `pytest_pwd tests/ -q`.
+Two roots, and they are not the same thing. The **code** is installed and found
+by import, wherever pip put it. The **deployment tree** is a directory that is
+written to every tick, and `BEEBOT_ROOT` is how anything finds it. It is
+required and has no default: guessing it from the installed package's location
+would answer `site-packages`, which is a perfectly real directory and the wrong
+one. `gateway/loop` will derive it from its own location and export it, so in a
+single checkout the export above is optional.
+
+Tests: `pytest_pwd tests/ -q` (after the install).
+
+## The messaging plugin
+
+Agents talk to each other through `plugins/beebot-loop`, a plugin installed
+once into the tool:
+
+```
+/plugin marketplace add .
+/plugin install beebot-loop@beebot
+```
+
+Installed rather than passed per invocation. The backend used to hand every
+`claude` call a `--plugin-dir` and an `--mcp-config` blob naming the server; an
+installed plugin supplies that path itself, so the adapter's command line is
+back to the three things a directory cannot know -- the session, the permission
+profile and the model.
+
+What the adapter still has to say is *which agent this process is*, and it says
+it as `BEEBOT_AGENT_DIR` in the child's environment. Claude Code passes its
+environment down to the stdio MCP servers it starts (verified against 2.1.257),
+so the server reads its binding -- and the inherited `BEEBOT_ROOT` -- from
+there. Out-of-band on purpose: the server derives the sender's identity and
+grants from that directory, so if it were a tool argument, anything the model
+read could make it send under someone else's name.
+
+Codex uses the inline MCP definition in `.codex-plugin/plugin.json`. Unlike
+Claude, it forwards only named variables to stdio servers, so that definition
+allowlists `BEEBOT_AGENT_DIR` and `BEEBOT_ROOT`. Its relative `cwd` is resolved
+against the installed plugin root; no backend-generated MCP configuration is
+needed when a Codex backend is added.
+
+One requirement, and it is easy to miss because nothing fails until an agent
+tries to send: both plugin definitions name `python3`, and `server.py` imports
+`beebot`. Whichever `python3` is first on the tool's PATH must be one that
+`pip install -e .` above installed into. If it is not, point both
+definitions at an interpreter that is.
 
 ## The state store
 

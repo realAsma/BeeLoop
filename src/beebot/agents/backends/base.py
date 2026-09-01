@@ -54,6 +54,7 @@ class Session:
     """
 
     agent_id: str  # record
+    agent_dir: Path  # runtime/agents/<agent_id>, supplied to bound tools
     session_id: str  # record
     # From the record's status. The ONLY create-versus-resume guard there is:
     # an adapter must decide from this and never by probing the provider.

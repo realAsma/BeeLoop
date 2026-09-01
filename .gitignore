@@ -17,9 +17,17 @@
 # chance. Directories are not objects in git, so this tracks nothing by itself.
 !*/
 
-# The source.
-!/agents/**
-!/dispatch/**
+# The source. Everything installable lives under one directory, so adding a
+# package is no longer a line here.
+!/src/**
+# Not under `src/`, and not by oversight: nothing imports it. The plugin is
+# installed into the tool, which launches `server.py` by path, so making it a
+# package would only offer a second way to reach a file that is already found.
+!/plugins/**
+# The marketplace manifest that makes `/plugin marketplace add .` work. One
+# file rather than `!/.claude-plugin/**`: a directory negation here would also
+# track whatever the tool decides to cache next to it.
+!/.claude-plugin/marketplace.json
 !/gateway/**
 !/configs/**
 !/tests/**
@@ -28,14 +36,22 @@
 # have to produce is not.
 !/inputs.d/README.md
 
-# This file, and the front door.
+# This file, the front door, and how the source above gets installed.
 !/.gitignore
 !/README.md
+!/pyproject.toml
 
 # Re-ignored last: the negations above are broad enough to sweep these back in
 # from inside a source directory, and a later rule wins.
 # Its own repository, cloned in. See the README.
 /state_store/
+
+# Build output, and it lands INSIDE the source directory: `pip install -e .`
+# writes it next to the packages, where `!/src/**` sweeps it straight back in.
+# The one case the deny-by-default rule above does not already cover, because
+# it is generated into the half of the tree that is named explicitly.
+/src/*.egg-info/
+/build/
 
 __pycache__/
 *.py[cod]

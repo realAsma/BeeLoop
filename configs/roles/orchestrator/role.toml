@@ -13,3 +13,11 @@ refresh_policy = { every = "4h", checkpoint = "1h" }
 
 # Only this adapter reads this block, and nothing outside it may look inside.
 [backend_options.claude_code]
+
+[messaging.send]
+roles = []
+ids = []
+
+[messaging.receive]
+roles = []
+ids = []

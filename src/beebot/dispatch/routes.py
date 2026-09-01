@@ -15,9 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
-import agents as ag
-
-from dispatch.envelope import Envelope
+from beebot import agents as ag
+from beebot.dispatch.envelope import Envelope
 
 DEFAULT_ROLE = "orchestrator"
 

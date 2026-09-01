@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-import agents as ag
-from agents.backends import InputItem, fake
+from beebot import agents as ag
+from beebot.agents.backends import InputItem, fake
 from tests.test_agents import as_fake, orchestrator, worker
 
 

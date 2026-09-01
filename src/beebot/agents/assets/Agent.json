@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://beebot.local/agents/Agent.json",
   "title": "BeeBot agent record",
-  "description": "Validates and documents runtime/agents/<agent_id>.json for an ordinary agent. One file per agent class, named for it: a class with a different record shape brings its own schema alongside this one, so adding it touches nothing here.",
+  "description": "Validates and documents runtime/agents/<agent_id>/record.json for an ordinary agent. One file per agent class, named for it: a class with a different record shape brings its own schema alongside this one, so adding it touches nothing here.",
   "type": "object",
   "additionalProperties": false,
   "required": [

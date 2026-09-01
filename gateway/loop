@@ -14,8 +14,17 @@
 
 set -euo pipefail
 
-BEEBOT_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd -P)"
-DISPATCH="$BEEBOT_ROOT/dispatch/dispatch"
+# Set once here, for the whole tree: the dispatcher and every adapter inherit
+# it rather than each deriving a root of its own. Deriving it from this file is
+# the fallback and not the rule -- this file is deployment state and does sit in
+# the tree it names, but an operator running several trees says so by exporting
+# BEEBOT_ROOT, and that has to win.
+BEEBOT_ROOT="${BEEBOT_ROOT:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd -P)}"
+export BEEBOT_ROOT
+# Off PATH, not out of the tree. The dispatcher is installed code and this file
+# is deployment state; building its path from BEEBOT_ROOT said the two live in
+# one directory, which was true only in a single checkout run from itself.
+DISPATCH="beebot-dispatch"
 INTERVAL="${BEEBOT_INPUT_INTERVAL:-1}"
 
 mkdir -p "$BEEBOT_ROOT/inputs.d" "$BEEBOT_ROOT/logs"
@@ -25,6 +34,14 @@ log() {
   printf '[%s] loop: %s\n' "$(date -Is)" "$1" \
     | tee -a "$BEEBOT_ROOT/logs/loop.log" >&2
 }
+
+# Checked once, here. Every dispatch runs backgrounded inside a pipeline, where
+# a missing command is one line on a log nobody is reading and the loop happily
+# continues discarding input. Refusing to start is the only loud version.
+if ! command -v "$DISPATCH" >/dev/null 2>&1; then
+  log "$DISPATCH is not on PATH; install the tree first: pip install -e ."
+  exit 1
+fi
 
 log "started; root=$BEEBOT_ROOT interval=${INTERVAL}s dispatch=$DISPATCH"
 

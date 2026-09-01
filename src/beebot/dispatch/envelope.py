@@ -44,11 +44,37 @@ class Envelope:
     instance: str | None = None
 
 
+# Every header key the envelope carries. Declared once and enforced at parse,
+# because this is the only checkpoint there is: `inputs.d/` is gitignored
+# deployment state and adapters are not code we control. Without it `roll=logger`
+# is dropped in silence and routes to the default role instead.
+FIELDS = frozenset({"role", "agent_id", "cwd", "instance", "source"})
+
+
+def serialize(envelope: Envelope) -> str:
+    """Write the canonical header block understood by :func:`parse`."""
+    fields = (
+        ("role", envelope.role),
+        ("agent_id", envelope.agent_id),
+        ("cwd", envelope.cwd),
+        ("instance", envelope.instance),
+        ("source", envelope.source),
+    )
+    headers = [f"{name}={value}" for name, value in fields if value is not None]
+    return "\n".join([*headers, f"msg={envelope.msg}"])
+
+
 def parse(text: str) -> Envelope:
     """Header lines of `key=value`, then `msg=` and everything after it.
 
     `msg=` ends the header block rather than a blank line, so a body may contain
     blank lines, `=` signs and anything else without escaping.
+
+    A header key outside `FIELDS` is an error rather than a value nobody reads: a
+    misspelling that routes somewhere plausible is worse than one that stops. A
+    header line starting `#` is skipped before that check, so a hand-edited
+    envelope may carry comments -- including ones containing `=`. Both rules end
+    at the `msg=` line; the body is never inspected.
     """
     headers: dict[str, str] = {}
     body = ""
@@ -57,12 +83,18 @@ def parse(text: str) -> Envelope:
         if line.startswith("msg="):
             body = "\n".join([line[len("msg=") :], *lines[index + 1 :]])
             break
-        if not line.strip():
+        if not line.strip() or line.lstrip().startswith("#"):
             continue
         key, _, value = line.partition("=")
         headers[key.strip()] = value.strip()
     else:
         raise EnvelopeError("no `msg=` line; an envelope with no body says nothing")
+
+    if unknown := headers.keys() - FIELDS:
+        raise EnvelopeError(
+            f"unknown envelope field(s): {', '.join(sorted(unknown))}; the "
+            f"envelope carries {', '.join(sorted(FIELDS))} and nothing else"
+        )
 
     role = headers.get("role") or None
     agent_id = headers.get("agent_id") or None
