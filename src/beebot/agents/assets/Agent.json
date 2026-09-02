@@ -50,7 +50,7 @@
     "instance": {
       "type": "string",
       "minLength": 1,
-      "description": "Which of several agents sharing one (source, cwd, role) this is. Descriptive, not authoritative -- runtime/routes.jsonl decides routing and this only records its answer. Absent means the default agent for that triple."
+      "description": "The persistent route name for an agent sharing one (source, cwd, role). Descriptive, not authoritative -- runtime/routes.jsonl decides routing and this only records its answer. Absent means the agent was created without a persistent instance; the reserved value 'fresh' is never recorded."
     },
     "backend": {
       "type": "string",

@@ -102,9 +102,11 @@ def test_the_live_server_exposes_exactly_the_two_public_tools():
 
     listed, identity = asyncio.run(inspect_server())
     assert [tool.name for tool in listed.tools] == ["get_agent_id", "message"]
-    message = listed.tools[1].inputSchema
+    tool = listed.tools[1]
+    message = tool.inputSchema
     assert set(message["properties"]) == {"receiver", "msg"}
     assert set(message["required"]) == {"receiver", "msg"}
+    assert "fresh" in tool.description
     assert identity.content[0].text == agent.agent_id
 
 
@@ -329,6 +331,76 @@ def test_route_creation_requires_a_send_role_grant(beebot_root, monkeypatch):
     assert len(created) == 1
     assert created[0].record["role"] == "target"
     assert route.resolve() == created[0].agent_id
+
+
+@pytest.mark.parametrize("instance", [None, "", "fresh"])
+def test_ephemeral_message_routes_create_a_new_agent_each_time(
+    beebot_root, monkeypatch, instance
+):
+    make_role(
+        beebot_root,
+        "target",
+        'backend = "fake"\ncwd = "workspaces/target"\n'
+        '[messaging.receive]\nroles = ["orchestrator"]\nids = []\n',
+    )
+    sender = orchestrator()
+    bind(sender)
+    rules(sender, send_roles=["target"])
+    submitted = []
+    monkeypatch.setattr(messaging, "_submit", submitted.append)
+    receiver = {"role": "target"}
+    if instance is not None:
+        receiver["instance"] = instance
+
+    server.message(receiver, "first")
+    server.message(receiver, "second")
+    recipient_ids = [item.agent_id for item in submitted]
+
+    assert len(set(recipient_ids)) == 2
+    assert all("instance" not in records.read(agent_id) for agent_id in recipient_ids)
+    assert not (records.runtime() / "routes.jsonl").exists()
+
+
+def test_fresh_message_routes_require_role_creation_permission(
+    beebot_root, monkeypatch
+):
+    make_role(
+        beebot_root,
+        "target",
+        'backend = "fake"\ncwd = "workspaces/target"\n'
+        '[messaging.receive]\nroles = ["orchestrator"]\nids = []\n',
+    )
+    sender = orchestrator()
+    bind(sender)
+    rules(sender, send_ids=["*"])
+    monkeypatch.setattr(messaging, "_submit", lambda *args: None)
+
+    with pytest.raises(server.MessagingError, match="not allowed to create"):
+        server.message({"role": "target", "instance": "fresh"}, "hello")
+
+    assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
+
+
+def test_named_message_routes_reuse_and_remain_distinct(beebot_root, monkeypatch):
+    make_role(
+        beebot_root,
+        "target",
+        'backend = "fake"\ncwd = "workspaces/target"\n'
+        '[messaging.receive]\nroles = ["orchestrator"]\nids = []\n',
+    )
+    sender = orchestrator()
+    bind(sender)
+    rules(sender, send_roles=["target"])
+    submitted = []
+    monkeypatch.setattr(messaging, "_submit", submitted.append)
+
+    for instance in ("default", "other", "default", "other"):
+        server.message({"role": "target", "instance": instance}, "hello")
+
+    recipient_ids = [item.agent_id for item in submitted]
+    assert recipient_ids[0] == recipient_ids[2]
+    assert recipient_ids[1] == recipient_ids[3]
+    assert recipient_ids[0] != recipient_ids[1]
 
 
 def test_receiver_routes_reject_unknown_fields(monkeypatch):

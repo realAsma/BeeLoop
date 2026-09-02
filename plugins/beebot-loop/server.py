@@ -34,6 +34,8 @@ def message(receiver: str | dict[str, Any], msg: str) -> str:
     """Asynchronously send a message to an agent ID or role route.
 
     A route is an object containing `role` and optional `cwd` and `instance`.
+    Missing, empty, or `fresh` instances create a new agent; any other instance
+    reuses the latest restorable agent created for that route.
     Returning `accepted` confirms background dispatch, not model completion.
     """
     messaging.send(_agent_directory(), receiver, msg)

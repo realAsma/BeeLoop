@@ -14,3 +14,8 @@ Incoming agent messages have a source such as `agent:<id>`. Reply explicitly by
 calling `message(receiver="<id>", msg="...")`; replies require permissions in
 both directions. Do not reply merely to acknowledge receipt, and avoid reply
 loops unless another turn is needed to complete the work.
+
+A receiver route contains `role` and optional `cwd` and `instance`. Omit
+`instance`, pass it empty, or use the exact lowercase value `fresh` to create a
+new agent. Use any other non-empty value, including `default`, to reuse the
+latest restorable agent for that route.

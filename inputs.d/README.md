@@ -16,6 +16,7 @@ gitignored apart from this file. Copy `example.sample` to start one.
 ```text
 # A review comment landed on a pull request.
 role=orchestrator
+instance=default
 source=review:example/project:123
 msg=Pull request 123 got a new review comment.
 See https://example.com/example/project/pull/123 for the thread.
@@ -35,7 +36,7 @@ contain `=`; past `msg=` there are no comments, only body.
 | `role` | a **role**, not an agent: a directory under `configs/roles/`. Creates a new agent. Used only when `agent_id` is absent. |
 | `agent_id` | continue **this** conversation. |
 | `cwd` | where the new agent works, overriding the role's own. Relative paths are under `BEEBOT_ROOT`. Optional, and only meaningful alongside `role`. |
-| `instance` | which of several agents under one `(source, cwd, role)`. Omit it for the one default agent there; name it for a second, parallel agent. Scoped to that triple, not a global name — the same label under a different triple is an unrelated agent. |
+| `instance` | conversation persistence under one `(source, cwd, role)`. Missing, empty, or exact lowercase `fresh` always creates a new agent. Every other non-empty value, including `default`, reuses the latest restorable agent for that route. Names are scoped to that triple, not global. |
 | `source` | *who caused this*, never where it goes. Compared for equality, never parsed. |
 | `msg` | prose: what happened and where to look. |
 

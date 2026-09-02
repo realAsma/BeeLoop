@@ -39,7 +39,7 @@ def envelope(**fields) -> str:
         "role": "worker",
         "agent_id": "",
         "cwd": WORKSPACE,
-        "instance": "",
+        "instance": "default",
         "source": "timer:t",
         **fields,
     }
@@ -277,50 +277,65 @@ def test_a_row_from_before_the_key_widened_matches_nothing(routes):
     assert key().resolve() is None
 
 
-def test_a_row_from_before_instance_existed_still_matches(routes):
-    """The no-migration guarantee, and the reason the default is `None` rather
-    than `""`: a row written before the field existed reads as `None` there, so
-    it keeps answering a key that names no instance. A `""` default would have
-    orphaned every live route the day this shipped."""
+@pytest.mark.parametrize("include_null", [False, True], ids=["missing", "null"])
+def test_legacy_routes_without_an_instance_are_ignored(routes, include_null):
+    """Old implicit-default routes remain on disk but are no longer reachable."""
+    route = key(instance="")
+    row = {
+        "source": route.source,
+        "cwd": route.cwd,
+        "role": route.role,
+        "agent_id": "01a0-preinstance",
+    }
+    if include_null:
+        row["instance"] = None
     with open(routes, "a") as handle:
-        handle.write(json.dumps({
-            "source": key().source,
-            "cwd": key().cwd,
-            "role": key().role,
-            "agent_id": "01a0-preinstance",
-        }) + "\n")
+        handle.write(json.dumps(row) + "\n")
 
-    assert key().resolve() == "01a0-preinstance"
+    assert route.resolve() is None
 
 
-def test_two_instances_of_one_key_are_two_agents(routes):
+def test_an_accidental_fresh_route_row_is_ignored(routes):
+    route = key(instance="fresh")
+    route_row = route.row("01a0-fresh")
+    routes.write_text(json.dumps(route_row) + "\n")
+
+    assert route.resolve() is None
+
+
+def test_default_and_other_named_instances_are_distinct(routes):
     """The whole point: two agents of one role, on one tree, driven by one
     source, which the triple alone could never tell apart."""
-    first = rt.agent_for(key(instance="a"))
-    second = rt.agent_for(key(instance="b"))
+    first = rt.agent_for(key(instance="default"))
+    second = rt.agent_for(key(instance="other"))
 
     assert second.agent_id != first.agent_id
+    assert rt.agent_for(key(instance="default")).agent_id == first.agent_id
+    assert rt.agent_for(key(instance="other")).agent_id == second.agent_id
     assert agent_count() == 2
 
 
-def test_no_instance_is_its_own_default_agent(routes):
-    """Naming no instance is a key in its own right, not a wildcard over the
-    named ones -- so adding a second agent under a triple leaves the one that
-    was already there exactly where it was."""
-    default = rt.agent_for(key())
-    named = rt.agent_for(key(instance="a"))
+@pytest.mark.parametrize("instance", ["", "fresh"])
+def test_ephemeral_instances_always_create_unrouted_agents(routes, instance):
+    route = key(instance=instance)
+    first = rt.agent_for(route)
+    second = rt.agent_for(route)
 
-    assert key() != key(instance="a")
-    assert named.agent_id != default.agent_id
-    assert rt.agent_for(key()).agent_id == default.agent_id
+    assert second.agent_id != first.agent_id
+    assert "instance" not in records.read(first.agent_id)
+    assert "instance" not in records.read(second.agent_id)
+    assert route.resolve() is None
+    route.remove()
+    assert not routes.exists()
 
 
-def test_an_instance_resumes_rather_than_recreating(routes):
+@pytest.mark.parametrize("instance", ["a", "Fresh"])
+def test_an_instance_resumes_rather_than_recreating(routes, instance):
     """An instance names a slot, not a fresh start: the second envelope on one
     continues the conversation the first began."""
-    first = rt.agent_for(key(instance="a"))
+    first = rt.agent_for(key(instance=instance))
 
-    assert rt.agent_for(key(instance="a")).agent_id == first.agent_id
+    assert rt.agent_for(key(instance=instance)).agent_id == first.agent_id
     assert agent_count() == 1
 
 
@@ -329,10 +344,10 @@ def test_the_record_carries_the_instance(routes):
     without the table. Omitted when there is none -- which is what keeps every
     record written before the field existed valid against the schema."""
     named = rt.agent_for(key(instance="b"))
-    default = rt.agent_for(key())
+    ephemeral = rt.agent_for(key(instance="fresh"))
 
     assert records.read(named.agent_id)["instance"] == "b"
-    assert "instance" not in records.read(default.agent_id)
+    assert "instance" not in records.read(ephemeral.agent_id)
 
 
 def test_remove_unroutes_without_touching_the_agent(routes):
@@ -372,6 +387,23 @@ def test_a_second_envelope_continues_the_same_agent(routes):
 
     assert agent_count() == 1
     assert records.read(agent.agent_id)["turns"] == 2
+
+
+@pytest.mark.parametrize("instance", ["", "fresh"])
+def test_ephemeral_dispatch_envelopes_create_a_new_agent_each_time(
+    routes, beebot_root, instance
+):
+    (beebot_root / "configs" / "roles" / "worker" / "role.toml").write_text(
+        'backend = "fake"\n', encoding="utf-8"
+    )
+
+    first = dsp.dispatch(env.parse(envelope(instance=instance, msg="first")))
+    second = dsp.dispatch(env.parse(envelope(instance=instance, msg="second")))
+    agent_ids = [line.split()[1] for line in (first, second)]
+
+    assert len(set(agent_ids)) == 2
+    assert all("instance" not in records.read(agent_id) for agent_id in agent_ids)
+    assert not routes.exists()
 
 
 def test_an_envelope_arriving_mid_turn_is_parked_not_dropped(routes):

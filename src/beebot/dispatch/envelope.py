@@ -33,7 +33,8 @@ class Envelope:
     naming one alongside an `agent_id` is refused.
 
     `instance` is a discriminator scoped to its triple, not a name: the same
-    label under a different triple is an unrelated agent.
+    label under a different triple is an unrelated agent. Missing, empty, and
+    `fresh` always create a new agent; every other non-empty value is persistent.
     """
 
     role: str | None

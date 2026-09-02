@@ -28,6 +28,10 @@ class Route:
     role: str
     instance: str | None = None
 
+    @property
+    def ephemeral(self) -> bool:
+        return not self.instance or self.instance == "fresh"
+
     @classmethod
     def of(cls, envelope: Envelope) -> "Route":
         role = envelope.role or DEFAULT_ROLE
@@ -42,6 +46,8 @@ class Route:
         return {**{field: getattr(self, field) for field in KEY}, "agent_id": agent_id}
 
     def resolve(self) -> str | None:
+        if self.ephemeral:
+            return None
         found = None
         for row in _rows():
             if _matches(row, self):
@@ -49,11 +55,15 @@ class Route:
         return found
 
     def new(self, agent_id: str) -> None:
+        if self.ephemeral:
+            return
         with open(routes_path(), "a", encoding="utf-8") as handle:
             handle.write(json.dumps(self.row(agent_id)) + "\n")
 
     def remove(self) -> None:
         """Tombstone this route without deleting its agent."""
+        if self.ephemeral:
+            return
         with open(routes_path(), "a", encoding="utf-8") as handle:
             handle.write(json.dumps(self.row(None)) + "\n")
 
@@ -73,7 +83,6 @@ def _rows() -> Iterator[dict[str, Any]]:
 
 
 def _matches(row: Mapping[str, Any], key: Route) -> bool:
-    # Missing instance remains compatible with rows written before it was added.
     return all(row.get(field) == getattr(key, field) for field in KEY)
 
 
@@ -86,6 +95,8 @@ def _restored(agent_id: str) -> ag.Agent | None:
 
 def agent_for(key: Route) -> ag.Agent:
     """Resolve or create an agent, serializing the final check and append."""
+    if key.ephemeral:
+        return ag.create(key.role, cwd=key.cwd)
     if (agent_id := key.resolve()) and (found := _restored(agent_id)):
         return found
 
