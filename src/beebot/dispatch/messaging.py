@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from beebot import agents as ag
+from beebot.agents.records import agent_path, root
+from beebot.agents.roles import load_role, workspace
 from beebot.dispatch.envelope import Envelope, serialize
 from beebot.dispatch.routes import Route, agent_for
 
@@ -56,7 +58,7 @@ def send(
     sender = _identity(sender_directory)
     grants = _grants(sender_directory / "config.toml", "send")
     recipient = _resolve(receiver, sender, grants)
-    receive = _grants(ag.agent_path(recipient.agent_id) / "config.toml", "receive")
+    receive = _grants(agent_path(recipient.agent_id) / "config.toml", "receive")
     if not receive.allows(sender["role"], sender["agent_id"]):
         raise MessagingError(
             f"agent {recipient.agent_id!r} does not allow messages from "
@@ -122,7 +124,7 @@ def _resolve(
                 raise MessagingError(
                     f"role {route.role!r} is not allowed to create a message route"
                 )
-            role_config = ag.root() / "configs" / "roles" / route.role / "role.toml"
+            role_config = root() / "configs" / "roles" / route.role / "role.toml"
             receive = _grants(role_config, "receive")
             if not receive.allows(sender["role"], sender["agent_id"]):
                 raise MessagingError(
@@ -154,7 +156,7 @@ def _route(receiver: dict[str, Any], sender_id: str) -> Route:
             raise MessagingError(f"receiver route {field} must be a string")
     return Route(
         source=f"agent:{sender_id}",
-        cwd=str(ag.workspace(ag.load_role(role), receiver.get("cwd"))),
+        cwd=str(workspace(load_role(role), receiver.get("cwd"))),
         role=role,
         instance=receiver.get("instance") or None,
     )
@@ -170,7 +172,7 @@ def _restore(agent_id: str | None) -> ag.Agent | None:
 
 
 def _submit(envelope: Envelope) -> None:
-    log_path = ag.root() / "logs" / "dispatch.log"
+    log_path = root() / "logs" / "dispatch.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "ab", buffering=0) as log:
         process = subprocess.Popen(

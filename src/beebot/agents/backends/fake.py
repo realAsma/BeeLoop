@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Sequence
 
-from .._agent import root
+from ..records import root
 from .base import Backend, BackendError, Delivery, Fault, InputItem, Session
 
 

@@ -1,10 +1,4 @@
-"""The backend contract: four operations, no state, and no provider named.
-
-Nothing here knows about roles, tasks, routes or refresh. If a CLI flag, a
-protocol method or a provider's name appears in this file, an adapter has leaked
-upward and `dispatch.py` will eventually have to branch on which backend it is
-talking to -- which is the one thing the design cannot afford.
-"""
+"""Provider-neutral backend contract."""
 
 from __future__ import annotations
 
@@ -13,11 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Mapping, Sequence
 
-# How an adapter accepts work that arrives while it is already working.
-# Declared on the class, never inferred: a dispatcher that had to guess would
-# end up branching on the answer.
 DeliveryMode = Literal["serial", "merge_active"]
-
 Fault = Literal["transient", "context_full", "terminal"]
 
 
@@ -88,11 +78,7 @@ class Delivery:
 
 
 class Backend(ABC):
-    """Stateless by construction.
-
-    Every durable detail arrives in a `Session` and none of it is kept, which is
-    what lets the gateway exit between ticks and rebuild an agent from one file.
-    """
+    """A stateless adapter; every durable detail arrives in a Session."""
 
     name: ClassVar[str]
     delivery_mode: ClassVar[DeliveryMode]

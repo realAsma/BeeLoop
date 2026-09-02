@@ -13,8 +13,9 @@ from __future__ import annotations
 import pytest
 
 from beebot import agents as ag
+from beebot.agents import records
 from beebot.agents.backends import InputItem, fake
-from tests.test_agents import as_fake, orchestrator, worker
+from tests.conftest import as_fake, worker
 
 
 def test_a_plain_agent_that_loses_its_session_dies():
@@ -25,7 +26,7 @@ def test_a_plain_agent_that_loses_its_session_dies():
     with pytest.raises(ag.NotResumable, match="lost its session"):
         agent.spin([InputItem("slack:D0B8:1", "hello")])
 
-    assert ag.read(agent.agent_id)["status"] == ag.CLOSED
+    assert records.read(agent.agent_id)["status"] == records.CLOSED
 
 
 def test_a_failure_that_is_not_terminal_is_not_a_death():
@@ -37,4 +38,4 @@ def test_a_failure_that_is_not_terminal_is_not_a_death():
         agent.spin([InputItem("slack:D0B8:1", "hello")])
 
     assert not isinstance(caught.value, ag.NotResumable)
-    assert ag.read(agent.agent_id)["status"] != ag.CLOSED
+    assert records.read(agent.agent_id)["status"] != records.CLOSED

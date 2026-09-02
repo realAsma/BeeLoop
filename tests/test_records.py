@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 
 from beebot import agents as ag
-from tests.test_agents import as_fake, orchestrator, poke, worker
+from beebot.agents import agent as agent_impl
+from beebot.agents import records, roles
+from tests.conftest import as_fake, orchestrator, poke, worker
 
 
 # ------------------------------------------------------------------- the door
@@ -22,7 +24,7 @@ def test_naming_an_agent_that_does_not_exist_raises_rather_than_creating_one():
     missing = "0198ff2a-0000-7000-8000-000000000000"
     with pytest.raises(ag.UnknownAgent, match="runtime/agents"):
         ag.Agent(missing)
-    assert not ag.record_path(missing).exists()
+    assert not records.record_path(missing).exists()
 
 
 def test_an_agent_id_and_a_role_together_are_refused():
@@ -43,8 +45,8 @@ def test_an_agent_needs_one_of_them():
 def test_the_default_type_is_the_ordinary_class_by_name():
     """The constant is spelled out because `Role`'s field default is evaluated
     before `Agent` exists. This is what stops the literal rotting."""
-    assert ag.DEFAULT_TYPE == ag.Agent.__name__
-    assert ag.REGISTRY[ag.DEFAULT_TYPE] is ag.Agent
+    assert roles.DEFAULT_TYPE == ag.Agent.__name__
+    assert agent_impl.REGISTRY[roles.DEFAULT_TYPE] is ag.Agent
 
 
 def test_a_role_that_names_no_type_is_an_ordinary_agent():
@@ -53,7 +55,7 @@ def test_a_role_that_names_no_type_is_an_ordinary_agent():
     the directory name kept in `role`."""
     made = worker()
     assert type(made) is ag.Agent
-    assert made.record["type"] == ag.DEFAULT_TYPE
+    assert made.record["type"] == roles.DEFAULT_TYPE
     assert made.record["role"] == "worker"
 
 
@@ -70,9 +72,9 @@ def test_a_role_naming_a_registered_type_builds_that_class(beebot_root):
     )
     try:
         assert type(worker()) is Specialist
-        assert ag.agent_class(ag.DEFAULT_TYPE) is ag.Agent
+        assert agent_impl.agent_class(roles.DEFAULT_TYPE) is ag.Agent
     finally:
-        del ag.REGISTRY["Specialist"]
+        del agent_impl.REGISTRY["Specialist"]
 
 
 def test_a_role_naming_a_type_nothing_registers_is_refused_and_named(beebot_root):
@@ -90,7 +92,7 @@ def test_restore_rebuilds_whatever_type_the_record_says():
     made = worker()
     again = ag.restore(made.agent_id)
     assert type(again) is ag.Agent
-    assert again.record["type"] == ag.DEFAULT_TYPE
+    assert again.record["type"] == roles.DEFAULT_TYPE
 
 
 # ----------------------------------------------------------------- the schema
@@ -105,9 +107,9 @@ def test_a_misspelled_field_is_refused_instead_of_silently_written():
     """
     agent = as_fake(worker())
     with pytest.raises(ag.AgentError, match="statuss"):
-        poke(agent, {"statuss": ag.CLOSED})
+        poke(agent, {"statuss": records.CLOSED})
 
-    assert ag.read(agent.agent_id)["status"] != ag.CLOSED
+    assert records.read(agent.agent_id)["status"] != records.CLOSED
 
 
 def test_a_status_outside_the_enum_is_refused():
@@ -135,4 +137,4 @@ def test_an_agent_may_not_carry_a_task():
 
 def test_an_unknown_schema_name_says_what_there_is():
     with pytest.raises(ag.AgentError, match="assets/ has Agent"):
-        ag.validate({}, "NoSuchSchema")
+        records.validate({}, "NoSuchSchema")

@@ -1,20 +1,4 @@
-"""The dispatcher: envelope in, agent found, batch delivered.
-
-The entry point. It never calls a model, never speaks a provider protocol, and
-never branches on delivery mode -- it calls `spin` and the adapter decides
-whether that returns after delivering or after parking behind a turn already in
-flight. Parsing lives in `envelope`, the table in `routes`; neither imports this.
-
-The envelope stops here: `spin` gets `InputItem(source, msg)`, because
-addressing is spent once a recipient exists and a turn is a batch that may mix
-envelopes.
-
-Nothing durable is held here. The process exits after every envelope and every
-object is rehydrated from disk on the next one.
-
-Run as `python -m beebot.dispatch.dispatch`, never as a path, so imports resolve
-through the installed package rather than the script's directory.
-"""
+"""Resolve an envelope, deliver its input, and report the result."""
 
 from __future__ import annotations
 
@@ -39,10 +23,9 @@ def dispatch(envelope: Envelope) -> str:
             f"parked {recipient.agent_id} <- {envelope.source} "
             f"(a turn is in flight)"
         )
-    record = ag.read(recipient.agent_id)
     return (
         f"delivered {recipient.agent_id} <- {envelope.source} "
-        f"turn {record['turns']}: {delivery.text.strip()[:160]}"
+        f"turn {recipient.record['turns']}: {delivery.text.strip()[:160]}"
     )
 
 

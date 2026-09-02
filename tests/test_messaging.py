@@ -15,11 +15,12 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from beebot import agents as ag
+from beebot.agents import records
 from beebot.agents.backends import fake
 from beebot.dispatch import messaging
 from beebot.dispatch.envelope import Envelope
 from beebot.dispatch.routes import Route
-from tests.test_agents import as_fake, make_role, orchestrator
+from tests.conftest import as_fake, make_role, orchestrator
 
 # Loaded by path, because that is how the tool loads it. `plugins/` is not a
 # package and is not installed: the plugin is installed into Claude Code, which
@@ -41,7 +42,7 @@ def unbind_server():
 
 
 def bind(agent: ag.Agent) -> None:
-    server.AGENT_DIRECTORY = ag.agent_path(agent.agent_id).resolve()
+    server.AGENT_DIRECTORY = records.agent_path(agent.agent_id).resolve()
 
 
 def rules(
@@ -60,7 +61,7 @@ def rules(
         f"roles = {json.dumps(receive_roles or [])}\n"
         f"ids = {json.dumps(receive_ids or [])}\n"
     )
-    (ag.agent_path(agent.agent_id) / "config.toml").write_text(body, encoding="utf-8")
+    (records.agent_path(agent.agent_id) / "config.toml").write_text(body, encoding="utf-8")
 
 
 def sender_and_receiver() -> tuple[ag.Agent, ag.Agent]:
@@ -89,7 +90,7 @@ def test_the_live_server_exposes_exactly_the_two_public_tools():
             args=[str(SERVER_PATH)],
             env={
                 **os.environ,
-                "BEEBOT_AGENT_DIR": str(ag.agent_path(agent.agent_id).resolve()),
+                "BEEBOT_AGENT_DIR": str(records.agent_path(agent.agent_id).resolve()),
             },
         )
         async with stdio_client(parameters) as streams:
@@ -133,7 +134,7 @@ def test_the_binding_comes_from_the_environment_and_must_be_absolute(monkeypatch
     with pytest.raises(server.MessagingError, match="must be absolute"):
         server.main()
 
-    directory = ag.agent_path(agent.agent_id).resolve()
+    directory = records.agent_path(agent.agent_id).resolve()
     monkeypatch.setenv("BEEBOT_AGENT_DIR", str(directory))
     monkeypatch.setattr(server.mcp, "run", lambda: None)
     assert server.main() == 0
@@ -145,9 +146,9 @@ def test_identity_is_read_from_the_bound_record_on_every_call():
     bind(agent)
     assert server.get_agent_id() == agent.agent_id
 
-    record = ag.read(agent.agent_id)
+    record = records.read(agent.agent_id)
     record["agent_id"] = "replacement-from-record"
-    ag.record_path(agent.agent_id).write_text(json.dumps(record), encoding="utf-8")
+    records.record_path(agent.agent_id).write_text(json.dumps(record), encoding="utf-8")
 
     assert server.get_agent_id() == "replacement-from-record"
 
@@ -315,14 +316,14 @@ def test_route_creation_requires_a_send_role_grant(beebot_root, monkeypatch):
 
     with pytest.raises(server.MessagingError, match="not allowed to create"):
         server.message({"role": "target", "instance": "one"}, "hello")
-    assert len(list(ag.runtime("agents").glob("*/record.json"))) == 1
+    assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
 
     rules(sender, send_roles=["target"])
     receiver = {"role": "target", "instance": "one"}
     assert server.message(receiver, "hello") == "accepted"
     created = [
         ag.restore(path.parent.name)
-        for path in ag.runtime("agents").glob("*/record.json")
+        for path in records.runtime("agents").glob("*/record.json")
         if path.parent.name != sender.agent_id
     ]
     assert len(created) == 1
@@ -351,28 +352,28 @@ def test_idle_delivery_is_detached_framed_and_logged():
     assert fake.turns(receiver.agent_id) == [
         [[f"agent:{sender.agent_id}", "background hello"]]
     ]
-    wait_for(lambda: "delivered" in (ag.root() / "logs" / "dispatch.log").read_text())
+    wait_for(lambda: "delivered" in (records.root() / "logs" / "dispatch.log").read_text())
 
 
 def test_busy_delivery_parks_then_drains_on_the_next_message():
     sender, receiver = sender_and_receiver()
     rules(sender, send_roles=["logger"])
     rules(receiver, receive_roles=["orchestrator"])
-    held = ag.claim(receiver.agent_id, [])
+    held = records.claim(receiver.agent_id, [])
     assert held is not None
     try:
         assert server.message(receiver.agent_id, "parked") == "accepted"
-        wait_for(lambda: ag.queue_path(receiver.agent_id).exists())
-        wait_for(lambda: bool(ag.queue_path(receiver.agent_id).read_text()))
+        wait_for(lambda: records.queue_path(receiver.agent_id).exists())
+        wait_for(lambda: bool(records.queue_path(receiver.agent_id).read_text()))
     finally:
         held.release()
 
     assert server.message(receiver.agent_id, "drain") == "accepted"
-    wait_for(lambda: ag.read(receiver.agent_id)["turns"] == 2)
+    wait_for(lambda: records.read(receiver.agent_id)["turns"] == 2)
     delivered = [item for turn in fake.turns(receiver.agent_id) for item in turn]
     assert delivered == [
         [f"agent:{sender.agent_id}", "drain"],
         [f"agent:{sender.agent_id}", "parked"],
     ]
-    log = (ag.root() / "logs" / "dispatch.log").read_text("utf-8")
+    log = (records.root() / "logs" / "dispatch.log").read_text("utf-8")
     assert "parked" in log and "delivered" in log

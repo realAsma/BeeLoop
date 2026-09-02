@@ -13,45 +13,9 @@ from pathlib import Path
 import pytest
 
 from beebot import agents as ag
-from beebot.agents import _agent  # the private queue helper this file patches
+from beebot.agents import records, roles
 from beebot.agents.backends import InputItem, fake
-
-
-def orchestrator(role: str = "orchestrator", **kwargs) -> ag.Agent:
-    return ag.create(role, **kwargs)
-
-
-def as_fake(agent: ag.Agent) -> ag.Agent:
-    """Point an agent at the backend that talks to nothing."""
-    poke(agent, {"backend": "fake"})
-    return ag.restore(agent.agent_id)
-
-
-def worker(**kwargs) -> ag.Agent:
-    """An ordinary agent: owns no task, so it cannot be refreshed.
-
-    The role directory is empty on purpose, so it names no cwd and every caller
-    has to say where the agent works.
-    """
-    kwargs.setdefault("cwd", "workspaces/worker")
-    return ag.create("worker", **kwargs)
-
-
-def make_role(home: Path, name: str, config: str = "", template: dict | None = None) -> Path:
-    """Write a role directory into the per-test tree."""
-    directory = home / "configs" / "roles" / name
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / "role.toml").write_text(config, encoding="utf-8")
-    for relative, body in (template or {}).items():
-        path = directory / "template" / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body, encoding="utf-8")
-    return directory
-
-
-def poke(agent: ag.Agent, fields: dict) -> dict:
-    """Write straight to a record, as an outside tool would."""
-    return ag.update(agent.agent_id, agent.SCHEMA, fields)
+from tests.conftest import as_fake, make_role, orchestrator, poke, worker
 
 
 # ---------------------------------------------------------------------- filing
@@ -60,15 +24,15 @@ def poke(agent: ag.Agent, fields: dict) -> dict:
 def test_root_rejects_a_path_that_is_not_a_directory(monkeypatch, tmp_path):
     monkeypatch.setenv("BEEBOT_ROOT", str(tmp_path / "nope"))
     with pytest.raises(ag.AgentError, match="BEEBOT_ROOT"):
-        ag.root()
+        records.root()
 
 
 def test_resolving_an_agent_path_does_not_create_it():
     missing = "0198ff2a-0000-7000-8000-000000000000"
 
-    path = ag.agent_path(missing)
+    path = records.agent_path(missing)
 
-    assert path == ag.root() / "runtime" / "agents" / missing
+    assert path == records.root() / "runtime" / "agents" / missing
     assert not path.exists()
 
 
@@ -79,7 +43,7 @@ def test_agent_ids_are_version_7_and_ordered_by_time():
     guarantee to assert is that the timestamp never goes backwards -- and that
     ids minted a millisecond apart sort.
     """
-    minted = [ag.new_agent_id() for _ in range(200)]
+    minted = [records.new_agent_id() for _ in range(200)]
     for value in minted:
         parsed = uuid.UUID(value)
         assert parsed.version == 7
@@ -90,7 +54,7 @@ def test_agent_ids_are_version_7_and_ordered_by_time():
 
     spaced = []
     for _ in range(5):
-        spaced.append(ag.new_agent_id())
+        spaced.append(records.new_agent_id())
         time.sleep(0.002)
     assert spaced == sorted(spaced)
 
@@ -103,8 +67,8 @@ def test_an_empty_directory_is_a_working_role(beebot_root):
     assert list((beebot_root / "configs" / "roles" / "worker").iterdir()) == []
 
     role = ag.load_role("worker")
-    assert role.backend == ag.DEFAULT_BACKEND
-    assert role.permissions == ag.DEFAULT_PERMISSIONS
+    assert role.backend == roles.DEFAULT_BACKEND
+    assert role.permissions == roles.DEFAULT_PERMISSIONS
     assert role.cwd is None
     assert role.options == {}
 
@@ -230,8 +194,8 @@ def test_an_agent_restored_from_a_record_matches_one_just_created():
 
 def test_creating_an_agent_writes_the_handle_before_anything_is_spent():
     agent = orchestrator()
-    on_disk = json.loads(ag.record_path(agent.agent_id).read_text("utf-8"))
-    assert on_disk["status"] == ag.PREPARED
+    on_disk = json.loads(records.record_path(agent.agent_id).read_text("utf-8"))
+    assert on_disk["status"] == records.PREPARED
     assert on_disk["session_id"]
     assert on_disk["turns"] == 0
     assert fake.turns(agent.agent_id) == []
@@ -239,12 +203,12 @@ def test_creating_an_agent_writes_the_handle_before_anything_is_spent():
 
 def test_an_agent_owns_its_record_and_a_snapshot_of_its_role_config(beebot_root):
     agent = orchestrator()
-    directory = ag.agent_path(agent.agent_id)
+    directory = records.agent_path(agent.agent_id)
     role_config = beebot_root / "configs" / "roles" / "orchestrator" / "role.toml"
     copied_config = role_config.read_text("utf-8")
 
-    assert ag.record_path(agent.agent_id) == directory / "record.json"
-    assert ag.queue_path(agent.agent_id) == directory / "queue.jsonl"
+    assert records.record_path(agent.agent_id) == directory / "record.json"
+    assert records.queue_path(agent.agent_id) == directory / "queue.jsonl"
     assert (directory / "config.toml").read_text("utf-8") == copied_config
 
     role_config.write_text('permissions = "read"\n', encoding="utf-8")
@@ -254,7 +218,7 @@ def test_an_agent_owns_its_record_and_a_snapshot_of_its_role_config(beebot_root)
 def test_an_empty_role_creates_an_empty_agent_config():
     agent = worker()
 
-    assert (ag.agent_path(agent.agent_id) / "config.toml").read_text("utf-8") == ""
+    assert (records.agent_path(agent.agent_id) / "config.toml").read_text("utf-8") == ""
 
 
 def test_update_rereads_so_a_write_during_a_turn_is_not_erased():
@@ -265,17 +229,12 @@ def test_update_rereads_so_a_write_during_a_turn_is_not_erased():
     change would vanish.
     """
     agent = as_fake(orchestrator())
-    outside = str(ag.root())
+    outside = str(records.root())
     poke(agent, {"cwd": outside})
 
     agent.spin([InputItem("slack:D0B8:1", "hello")])
 
-    assert ag.read(agent.agent_id)["cwd"] == outside
-
-
-def test_an_unknown_agent_names_the_file_it_looked_for():
-    with pytest.raises(ag.UnknownAgent, match="runtime/agents"):
-        ag.Agent("0198ff2a-0000-7000-8000-000000000000")
+    assert records.read(agent.agent_id)["cwd"] == outside
 
 
 # ------------------------------------------------------------------ the locks
@@ -283,13 +242,13 @@ def test_an_unknown_agent_names_the_file_it_looked_for():
 
 def test_queue_and_locks_live_with_the_agent():
     agent = as_fake(orchestrator())
-    held = ag.claim(agent.agent_id, [])
+    held = records.claim(agent.agent_id, [])
     assert held is not None
     try:
         parked = ag.restore(agent.agent_id).spin([InputItem("late", "wait")])
         assert parked.parked is True
 
-        directory = ag.agent_path(agent.agent_id)
+        directory = records.agent_path(agent.agent_id)
         assert {path.name for path in directory.iterdir()} == {
             "config.toml",
             "files.lock",
@@ -297,9 +256,9 @@ def test_queue_and_locks_live_with_the_agent():
             "queue.jsonl",
             "record.json",
         }
-        assert not (ag.root() / "runtime" / "queue").exists()
-        assert not (ag.root() / "runtime" / "locks").exists()
-        assert not (ag.root() / "runtime" / "agents" / ".lock").exists()
+        assert not (records.root() / "runtime" / "queue").exists()
+        assert not (records.root() / "runtime" / "locks").exists()
+        assert not (records.root() / "runtime" / "agents" / ".lock").exists()
     finally:
         held.release()
 
@@ -314,7 +273,7 @@ def test_one_input_is_one_turn():
     assert delivery.parked is False
     assert delivery.text == "hello"
     assert fake.turns(agent.agent_id) == [[["slack:D0B8:1", "hello"]]]
-    assert ag.read(agent.agent_id)["turns"] == 1
+    assert records.read(agent.agent_id)["turns"] == 1
 
 
 def test_the_source_of_every_item_survives_batching():
@@ -333,7 +292,7 @@ def test_the_source_of_every_item_survives_batching():
 def test_arrivals_during_a_turn_are_parked_and_drained_in_order():
     """Three messages sent mid-batch: parked, drained in order, one transcript."""
     agent = as_fake(orchestrator())
-    held = ag.claim(agent.agent_id, [])
+    held = records.claim(agent.agent_id, [])
     assert held is not None
 
     for index in range(3):
@@ -354,16 +313,16 @@ def test_arrivals_during_a_turn_are_parked_and_drained_in_order():
         ["slack:D0B8:1", "message 1"],
         ["slack:D0B8:2", "message 2"],
     ]
-    assert ag.read(agent.agent_id)["turns"] == 2
+    assert records.read(agent.agent_id)["turns"] == 2
 
 
 def test_a_parked_delivery_is_not_counted_as_a_turn():
     agent = as_fake(orchestrator())
-    held = ag.claim(agent.agent_id, [])
+    held = records.claim(agent.agent_id, [])
     ag.restore(agent.agent_id).spin([InputItem("slack:D0B8:1", "hi")])
     held.release()
 
-    record = ag.read(agent.agent_id)
+    record = records.read(agent.agent_id)
     assert record["turns"] == 0
     assert record["last_turn"] is None
 
@@ -377,7 +336,7 @@ def test_an_arrival_cannot_slip_between_the_empty_check_and_the_release():
     agent = as_fake(orchestrator())
     reached = threading.Event()
     proceed = threading.Event()
-    real_take = _agent._take_queue
+    real_take = records._take_queue
 
     def slow_take(agent_id: str):
         batch = real_take(agent_id)
@@ -393,7 +352,7 @@ def test_an_arrival_cannot_slip_between_the_empty_check_and_the_release():
         ag.restore(agent.agent_id).spin([InputItem("late", "arrived")])
         arrive.took = time.monotonic() - started
 
-    _agent._take_queue = slow_take
+    records._take_queue = slow_take
     try:
         thread = threading.Thread(target=arrive)
         thread.start()
@@ -401,7 +360,7 @@ def test_an_arrival_cannot_slip_between_the_empty_check_and_the_release():
         proceed.set()
         thread.join(10)
     finally:
-        _agent._take_queue = real_take
+        records._take_queue = real_take
 
     sources = [source for turn in fake.turns(agent.agent_id) for source, _ in turn]
     assert sources == ["slack:D0B8:1", "late"], "the late arrival was stranded"
@@ -419,7 +378,7 @@ def test_stats_accumulate_across_turns():
     agent.spin([InputItem("a", "one")])
     agent.spin([InputItem("b", "two")])
 
-    record = ag.read(agent.agent_id)
+    record = records.read(agent.agent_id)
     assert record["turns"] == 2
     assert record["session_turns"] == 2
     assert record["created"] <= record["last_turn"]
@@ -452,7 +411,7 @@ def code_of(name: str) -> str:
 def test_no_provider_leaks_into_the_contract():
     """If a flag or a provider name appears in this code, dispatch will end up
     branching on which backend it is talking to."""
-    for name in ("_agent.py", "backends/base.py", "backends/fake.py"):
+    for name in ("agent.py", "records.py", "roles.py", "backends/base.py", "backends/fake.py"):
         source = code_of(name)
         assert not re.search(r'["\']--[a-z]', source), f"a CLI flag reached {name}"
         assert not re.search(r"\bsubprocess\b", source), f"subprocess reached {name}"
@@ -460,5 +419,5 @@ def test_no_provider_leaks_into_the_contract():
 
 
 def test_delivery_mode_never_escapes_the_backends_package():
-    caller = (Path(ag.__file__).parent / "_agent.py").read_text("utf-8")
+    caller = (Path(ag.__file__).parent / "agent.py").read_text("utf-8")
     assert "delivery_mode" not in caller

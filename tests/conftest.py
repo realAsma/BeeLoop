@@ -7,9 +7,43 @@ from pathlib import Path
 
 import pytest
 
+from beebot import agents as ag
+from beebot.agents import records
+
 # The source tree, for its checked-in `configs/` only. Not a BEEBOT_ROOT: the
 # packages come from the install, and each test gets a root of its own below.
 SOURCE = Path(__file__).resolve().parents[1]
+
+
+def orchestrator(role: str = "orchestrator", **kwargs) -> ag.Agent:
+    return ag.create(role, **kwargs)
+
+
+def as_fake(agent: ag.Agent) -> ag.Agent:
+    poke(agent, {"backend": "fake"})
+    return ag.restore(agent.agent_id)
+
+
+def worker(**kwargs) -> ag.Agent:
+    kwargs.setdefault("cwd", "workspaces/worker")
+    return ag.create("worker", **kwargs)
+
+
+def make_role(
+    home: Path, name: str, config: str = "", template: dict | None = None
+) -> Path:
+    directory = home / "configs" / "roles" / name
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "role.toml").write_text(config, encoding="utf-8")
+    for relative, body in (template or {}).items():
+        path = directory / "template" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+    return directory
+
+
+def poke(agent: ag.Agent, fields: dict) -> dict:
+    return records.update(agent.agent_id, agent.SCHEMA, fields)
 
 
 @pytest.fixture(autouse=True)

@@ -1,15 +1,3 @@
-# The code root, packaged. The deployment tree -- runtime/, logs/, inputs.d/,
-# configs/, agent workspaces -- is BEEBOT_ROOT and is not shipped here: one is
-# installed once and read-only, the other is written to every tick. Conflating
-# them is what made `Path(__file__).parents[1]` look like a root.
-#
-# `src/` is that separation made physical. With the packages at the top level
-# the deployment tree and the importable code shared a directory, so any
-# process started in the checkout imported the source whether or not it was
-# installed -- which means a broken install looks correct until something runs
-# from somewhere else. Under `src/` nothing is importable that pip did not put
-# there.
-
 [build-system]
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
@@ -18,25 +6,17 @@ build-backend = "setuptools.build_meta"
 name = "beebot"
 version = "0.1.0"
 description = "Long-running agents that live in a directory and are addressed by letter."
-# 3.11 for tomllib, which roles and messaging grants are both read with.
 requires-python = ">=3.11"
 dependencies = [
     "jsonschema",
     "mcp",
 ]
 
-# The loop's target, and what replaced the bash shim at `dispatch/dispatch`.
-# That shim existed only to find an interpreter that could see the
-# dependencies; pip writes exactly that interpreter into this script's shebang,
-# so the problem is removed rather than solved somewhere else.
 [project.scripts]
 beebot-dispatch = "beebot.dispatch.dispatch:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-# Listed rather than found. Auto-discovery under `src/` would be safe now that
-# the deployment tree is not a sibling, but naming them keeps what ships a
-# decision rather than a consequence of what happens to be on disk.
 packages = [
     "beebot",
     "beebot.agents",
@@ -44,15 +24,5 @@ packages = [
     "beebot.dispatch",
 ]
 
-# `plugins/` is absent on purpose. It is installed into Claude Code, not by
-# pip: the tool copies the plugin directory and launches `server.py` by the
-# path it supplies, so shipping a second copy under site-packages would give
-# the same server two locations and no way to tell which one is running.
-# What the install DOES have to provide is the interpreter: `server.py` imports
-# `beebot`, so the `python3` named in the manifests must be one
-# that can import this package.
-
-# Data, not code: the record schemas are read by path out of the installed
-# package. These globs are package-relative, so `src/` does not appear in them.
 [tool.setuptools.package-data]
 "beebot.agents" = ["assets/*.json"]

@@ -43,10 +43,7 @@ _PROFILES = {
 
 class ClaudeBackend(Backend):
     name = "claude_code"
-    # Not caution. Two concurrent `--resume` calls against one session both exit
-    # 0, both answer, and both append to the same transcript -- two branches
-    # interleaved into one file, silently. Serializing is the mechanism that
-    # prevents it; the CLI does nothing.
+    # Concurrent resumes can interleave branches in one session transcript.
     delivery_mode = "serial"
 
     def open(self) -> str:

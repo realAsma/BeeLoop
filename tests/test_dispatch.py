@@ -9,10 +9,11 @@ from pathlib import Path
 import pytest
 
 from beebot import agents as ag
+from beebot.agents import records
 import beebot.dispatch.dispatch as dsp
 import beebot.dispatch.envelope as env
 import beebot.dispatch.routes as rt
-from tests.test_agents import as_fake, poke
+from tests.conftest import as_fake, poke
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +26,7 @@ def routes(beebot_root, monkeypatch):
 
 
 def agent_count() -> int:
-    return len(list(ag.runtime("agents").glob("*/record.json")))
+    return len(list(records.runtime("agents").glob("*/record.json")))
 
 
 # `worker` is the empty role, so it names no cwd and every envelope must.
@@ -160,7 +161,7 @@ def test_the_envelopes_cwd_is_where_the_new_agent_works(routes):
     parsed = env.parse(envelope(cwd="workspaces/delegated"))
     agent = rt.agent_for(rt.Route.of(parsed))
 
-    assert agent.cwd == (ag.root() / "workspaces" / "delegated").resolve()
+    assert agent.cwd == (records.root() / "workspaces" / "delegated").resolve()
 
 
 def test_two_racing_ticks_on_one_unrouted_source_produce_one_agent(routes):
@@ -201,7 +202,7 @@ def test_a_truncated_final_line_is_skipped_not_thrown(routes):
 def test_a_route_to_a_deleted_record_spawns_fresh_and_corrects_itself(routes):
     """A duplicated agent is a far better outcome than a dropped envelope."""
     first = rt.agent_for(key())
-    ag.record_path(first.agent_id).unlink()
+    records.record_path(first.agent_id).unlink()
 
     second = rt.agent_for(key())
 
@@ -263,7 +264,7 @@ def test_the_keys_cwd_is_the_absolute_one_the_record_holds(routes):
     and neither has to be resolved again to compare them."""
     agent = rt.agent_for(key())
 
-    assert key().cwd == ag.read(agent.agent_id)["cwd"]
+    assert key().cwd == records.read(agent.agent_id)["cwd"]
     assert Path(key().cwd).is_absolute()
 
 
@@ -330,8 +331,8 @@ def test_the_record_carries_the_instance(routes):
     named = rt.agent_for(key(instance="b"))
     default = rt.agent_for(key())
 
-    assert ag.read(named.agent_id)["instance"] == "b"
-    assert "instance" not in ag.read(default.agent_id)
+    assert records.read(named.agent_id)["instance"] == "b"
+    assert "instance" not in records.read(default.agent_id)
 
 
 def test_remove_unroutes_without_touching_the_agent(routes):
@@ -342,7 +343,7 @@ def test_remove_unroutes_without_touching_the_agent(routes):
     key().remove()
 
     assert key().resolve() is None
-    assert ag.read(first.agent_id)["agent_id"] == first.agent_id
+    assert records.read(first.agent_id)["agent_id"] == first.agent_id
     assert rt.agent_for(key()).agent_id != first.agent_id
 
 
@@ -361,7 +362,7 @@ def test_an_envelope_reaches_the_agent_its_source_is_routed_to(routes):
     line = dsp.dispatch(env.parse(envelope(msg="write the time")))
 
     assert agent.agent_id in line
-    assert ag.read(agent.agent_id)["turns"] == 1
+    assert records.read(agent.agent_id)["turns"] == 1
 
 
 def test_a_second_envelope_continues_the_same_agent(routes):
@@ -370,22 +371,22 @@ def test_a_second_envelope_continues_the_same_agent(routes):
     dsp.dispatch(env.parse(envelope(msg="second")))
 
     assert agent_count() == 1
-    assert ag.read(agent.agent_id)["turns"] == 2
+    assert records.read(agent.agent_id)["turns"] == 2
 
 
 def test_an_envelope_arriving_mid_turn_is_parked_not_dropped(routes):
     agent = as_fake(rt.agent_for(key()))
-    held = ag.claim(agent.agent_id, [])
+    held = records.claim(agent.agent_id, [])
     try:
         line = dsp.dispatch(env.parse(envelope(msg="arrives while busy")))
     finally:
         held.release()
 
     assert "parked" in line
-    assert ag.read(agent.agent_id)["turns"] == 0
+    assert records.read(agent.agent_id)["turns"] == 0
 
     dsp.dispatch(env.parse(envelope(msg="the next tick")))
-    assert ag.read(agent.agent_id)["turns"] == 2, "the parked input was drained"
+    assert records.read(agent.agent_id)["turns"] == 2, "the parked input was drained"
 
 
 def test_an_envelope_naming_an_unknown_agent_fails_loudly(routes):
