@@ -14,6 +14,7 @@ from .agent import (
 from .backends import Delivery, InputItem, Session
 from .records import (
     CLOSED,
+    DORMANT,
     PREPARED,
     STAMP,
     UTC,
@@ -47,7 +48,8 @@ from .roles import (
 )
 
 __all__ = [
-    "CLOSED", "DEFAULT_BACKEND", "DEFAULT_PERMISSIONS", "DEFAULT_TYPE",
+    "CLOSED", "DORMANT", "DEFAULT_BACKEND", "DEFAULT_PERMISSIONS",
+    "DEFAULT_TYPE",
     "PREPARED", "STAMP", "UTC",
     "AgentError", "NotResumable", "UnknownAgent", "UnknownRole",
     "agent_path", "queue_path", "record_path", "root", "runtime",

@@ -6,9 +6,12 @@ from pathlib import Path
 from typing import Any, ClassVar, Mapping, Sequence
 
 from . import backends
+from . import records
+from . import session_ttl
 from .backends import BackendError, Delivery, InputItem, Session
 from .records import (
     CLOSED,
+    DORMANT,
     PREPARED,
     AgentError,
     agent_path,
@@ -56,6 +59,7 @@ class Agent:
             )
         self.role = load_role(self.record["role"])
         self.backend = backends.get(self.record["backend"])
+        self.ttl_policy = session_ttl.load_policy(self.agent_id)
 
     @classmethod
     def _allocate(
@@ -87,6 +91,7 @@ class Agent:
             "cost_usd": 0.0,
             **extra,
         }
+        session_ttl.arm(record, role.session_ttl)
         directory = agent_path(agent_id)
         directory.mkdir(parents=True)
         role_config = role.directory / "role.toml"
@@ -95,6 +100,10 @@ class Agent:
             role_config.read_text("utf-8") if role_config.exists() else "",
         )
         write(record, cls.SCHEMA)
+        if role.session_ttl is not None:
+            from . import timers as agent_timers
+
+            agent_timers.install_adapter()
         return record
 
     def _update(
@@ -109,7 +118,7 @@ class Agent:
         return self.record["agent_id"]
 
     @property
-    def session_id(self) -> str:
+    def session_id(self) -> str | None:
         return self.record["session_id"]
 
     @property
@@ -134,27 +143,109 @@ class Agent:
         with held:
             batch: Sequence[InputItem] = inputs
             while True:
-                try:
-                    delivery = self._turn(batch)
-                except BackendError as exc:
-                    if self.backend.classify(str(exc)) != "terminal":
-                        raise
-                    self.on_terminal(exc)
-                    delivery = self._turn(batch)
+                delivery = self._process(batch)
                 batch = drain_or_release(self.agent_id, held)
                 if not batch:
                     return delivery
 
+    def _process(self, batch: Sequence[InputItem]) -> Delivery:
+        if self.ttl_policy is None:
+            return self._turn(batch)
+
+        expiry = [item for item in batch if session_ttl.is_expiry_input(item)]
+        ordinary = [item for item in batch if not session_ttl.is_expiry_input(item)]
+        delivery = Delivery(text="")
+
+        if expiry and self.status != DORMANT:
+            delivery = self._expire_session(expiry[0])
+        if ordinary:
+            delivery = (
+                self._wake_session(ordinary)
+                if self.status == DORMANT
+                else self._turn(ordinary)
+            )
+        return delivery
+
     def _turn(self, batch: Sequence[InputItem]) -> Delivery:
-        delivery = self.backend.deliver(self.session(), batch)
-        self.record = self._update(
-            {**delivery.updates, "last_turn": now()},
-            bump={
-                "turns": 1,
-                "session_turns": 1,
-                "cost_usd": delivery.cost_usd or 0.0,
-            },
-        )
+        try:
+            delivery = self.backend.deliver(self.session(), batch)
+        except BackendError as exc:
+            if self.backend.classify(str(exc)) != "terminal":
+                raise
+            self.on_terminal(exc)
+            return self._turn(batch)
+        self._record_delivery(delivery, move_ttl=True)
+        return delivery
+
+    def _record_delivery(self, delivery: Delivery, *, move_ttl: bool) -> None:
+        stamp = now()
+
+        def change(record: dict[str, Any]) -> None:
+            record.update({**delivery.updates, "last_turn": stamp})
+            record["turns"] += 1
+            record["session_turns"] += 1
+            record["cost_usd"] += delivery.cost_usd or 0.0
+            if move_ttl:
+                session_ttl.move(record, self.ttl_policy)
+
+        self.record = records.modify(self.agent_id, self.SCHEMA, change)
+
+    def _expire_session(self, item: InputItem) -> Delivery:
+        old_session = self.session()
+        saved = True
+        try:
+            delivery = self.backend.deliver(old_session, [item])
+            self._record_delivery(delivery, move_ttl=False)
+            handoff = delivery.text.strip() or "The previous session saved no handoff."
+        except BackendError:
+            saved = False
+            handoff = (
+                "The previous session expired before it could save. Recover any "
+                "existing work for this cwd from BeeBot State."
+            )
+
+        try:
+            session_ttl.write_handoff(self.agent_id, handoff)
+        finally:
+            try:
+                self.backend.close(old_session)
+            finally:
+                def sleep(record: dict[str, Any]) -> None:
+                    record.update(
+                        {"status": DORMANT, "session_id": None, "session_since": None}
+                    )
+                    session_ttl.remove(record)
+
+                self.record = records.modify(self.agent_id, self.SCHEMA, sleep)
+        outcome = "saved" if saved else "failed"
+        return Delivery(text=f"session TTL expired; handoff {outcome}")
+
+    def _wake_session(self, inputs: Sequence[InputItem]) -> Delivery:
+        stamp = now()
+        session_id = self.backend.open()
+
+        def wake(record: dict[str, Any]) -> None:
+            record.update(
+                {
+                    "session_id": session_id,
+                    "status": PREPARED,
+                    "session_since": stamp,
+                    "session_turns": 0,
+                }
+            )
+            session_ttl.arm(record, self.ttl_policy)
+
+        self.record = records.modify(self.agent_id, self.SCHEMA, wake)
+        if self.ttl_policy is not None:
+            from . import timers as agent_timers
+
+            agent_timers.install_adapter()
+
+        handoff = session_ttl.read_handoff(self.agent_id)
+        batch = [session_ttl.restore_input(handoff), *inputs] if handoff else list(inputs)
+        delivery = self._turn(batch)
+        if handoff:
+            session_ttl.clear_handoff(self.agent_id)
         return delivery
 
     def on_terminal(self, exc: BackendError) -> None:
@@ -166,6 +257,8 @@ class Agent:
         ) from exc
 
     def session(self) -> Session:
+        if self.session_id is None:
+            raise AgentError(f"agent {self.agent_id} has no active backend session")
         return Session(
             agent_id=self.agent_id,
             agent_dir=agent_path(self.agent_id).resolve(),
@@ -177,7 +270,8 @@ class Agent:
         )
 
     def close(self) -> None:
-        self.backend.close(self.session())
+        if self.status != DORMANT:
+            self.backend.close(self.session())
         self.record = self._update({"status": CLOSED})
 
 

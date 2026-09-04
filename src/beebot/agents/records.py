@@ -12,7 +12,7 @@ import uuid
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 import jsonschema
 
@@ -20,7 +20,7 @@ from .backends import InputItem
 
 UTC = dt.timezone.utc
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
-PREPARED, CLOSED = "prepared", "closed"
+PREPARED, DORMANT, CLOSED = "prepared", "dormant", "closed"
 
 
 class AgentError(RuntimeError):
@@ -167,11 +167,23 @@ def update(
     bump: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     """Update the latest record under its files lock."""
-    with files_lock(agent_id):
-        record = read(agent_id)
+    def apply(record: dict[str, Any]) -> None:
         record.update(fields or {})
         for key, amount in (bump or {}).items():
             record[key] = (record.get(key) or 0) + amount
+
+    return modify(agent_id, schema, apply)
+
+
+def modify(
+    agent_id: str,
+    schema: str,
+    change: Callable[[dict[str, Any]], None],
+) -> dict[str, Any]:
+    """Mutate the latest record atomically under its files lock."""
+    with files_lock(agent_id):
+        record = read(agent_id)
+        change(record)
         write(record, schema)
         return record
 

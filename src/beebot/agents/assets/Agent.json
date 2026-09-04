@@ -63,20 +63,27 @@
       "description": "BeeBot state, not the provider's. A provider may adopt whatever directory it was last invoked from, so this is replayed on every call and never inferred back."
     },
     "session_id": {
-      "$ref": "#/$defs/uuid",
-      "description": "The whole of a stateless backend. Mortal: replaced by refresh under a stable agent_id. Losing it strands a conversation that still exists on the provider's disk."
+      "oneOf": [
+        {"$ref": "#/$defs/uuid"},
+        {"type": "null"}
+      ],
+      "description": "The whole of a stateless backend. Mortal: replaced after TTL expiry under a stable agent_id. Null only while the agent is dormant between sessions."
     },
     "status": {
       "enum": [
         "prepared",
         "active",
+        "dormant",
         "closed"
       ],
-      "description": "`prepared` is load-bearing: it is the ONLY create-versus-resume guard, because reusing a live session id is guarded by the provider only within one project slug and otherwise forks the conversation silently."
+      "description": "`prepared` is the create-versus-resume guard. `dormant` retains the stable agent without an attached backend session after TTL expiry."
     },
     "session_since": {
-      "$ref": "#/$defs/timestamp",
-      "description": "When the CURRENT session began. Reset by refresh, and the only thing an age-triggered refresh has to compare against."
+      "oneOf": [
+        {"$ref": "#/$defs/timestamp"},
+        {"type": "null"}
+      ],
+      "description": "When the current session began. Reset when a dormant agent wakes and null while it has no backend session."
     },
     "session_turns": {
       "type": "integer",

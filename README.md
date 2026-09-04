@@ -75,6 +75,27 @@ one shared executable adapter at `inputs.d/beebot-timers`. Each poll emits at
 most the globally earliest due wake, addressed directly to its owner. The
 schedule is removed or advanced before dispatch, so delivery is at-most-once.
 
+### Session TTL
+
+A role may give newly created backend sessions an idle TTL, a maximum age, or
+both. The earlier deadline wins:
+
+```toml
+[session_ttl]
+idle = "4h"
+max_age = "24h"
+```
+
+TTL uses an ordinary visible, cancellable one-shot timer. When it fires, the old
+session receives one final turn asking it to save to BeeBot State and return a
+continuation handoff. BeeBot caches that response in the agent directory and
+detaches the backend session. The stable agent ID and its routes remain intact.
+
+The next input opens a fresh session and is delivered in one ordered batch with
+the cached handoff first. Cancelling the TTL timer disables expiry for that
+backend session. TTL configuration is copied into the agent's `config.toml` at
+creation, so later role edits do not alter an existing agent's policy.
+
 ## The state store
 
 Long-term work state lives in a separate repo, consumed here as a Claude Code

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from . import backends
+from . import session_ttl
 from .records import AgentError, root
 
 DEFAULT_BACKEND = backends.DEFAULT
@@ -28,6 +29,7 @@ class Role:
     permissions: str = DEFAULT_PERMISSIONS
     cwd: Path | None = None
     options: Mapping[str, Any] = field(default_factory=dict)
+    session_ttl: session_ttl.Policy | None = None
 
     @property
     def template(self) -> Path:
@@ -50,6 +52,10 @@ def load_role(name: str) -> Role:
 
     backend = config.get("backend", DEFAULT_BACKEND)
     cwd = config.get("cwd")
+    try:
+        ttl = session_ttl.parse_policy(config.get("session_ttl"))
+    except session_ttl.PolicyError as exc:
+        raise UnknownRole(f"the role config at {toml} is broken: {exc}") from exc
     return Role(
         directory=directory,
         type=config.get("type", DEFAULT_TYPE),
@@ -57,6 +63,7 @@ def load_role(name: str) -> Role:
         permissions=config.get("permissions", DEFAULT_PERMISSIONS),
         cwd=(root() / cwd).resolve() if cwd else None,
         options=config.get("backend_options", {}).get(backend, {}),
+        session_ttl=ttl,
     )
 
 

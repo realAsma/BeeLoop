@@ -168,15 +168,17 @@ def test_timer_tools_can_manage_only_the_bound_agents_record():
 
     created = server.timer_create("check", after="1h")
 
-    assert server.timer_list() == [created]
+    first_timers = server.timer_list()
+    assert created in first_timers
+    ttl = next(timer for timer in first_timers if timer != created)
     assert records.read(second.agent_id).get("timers", []) == []
     bind(second)
     assert server.timer_list() == []
     assert server.timer_cancel(created["timer_id"]) == "not found"
-    assert records.read(first.agent_id)["timers"] == [created]
+    assert records.read(first.agent_id)["timers"] == first_timers
     bind(first)
     assert server.timer_cancel(created["timer_id"]) == "cancelled"
-    assert server.timer_list() == []
+    assert server.timer_list() == [ttl]
 
 
 @pytest.mark.parametrize(

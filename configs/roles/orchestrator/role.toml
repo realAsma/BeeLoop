@@ -1,1 +1,5 @@
 cwd = "workspaces/orchestrator"
+
+[session_ttl]
+idle = "4h"
+max_age = "24h"

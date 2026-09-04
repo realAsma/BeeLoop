@@ -1,0 +1,179 @@
+"""Role-configured session expiry and continuation."""
+
+from __future__ import annotations
+
+import datetime as dt
+
+import pytest
+
+import beebot.agents.agent as agent_module
+from beebot import agents as ag
+from beebot import timers
+from beebot.agents import records, session_ttl
+from beebot.agents import timers as agent_timers
+from beebot.agents.backends import InputItem, fake
+from beebot.dispatch.dispatch import dispatch
+from tests.conftest import as_fake, make_role, orchestrator, worker
+
+
+def test_orchestrator_starts_with_the_role_ttl_as_an_ordinary_timer():
+    agent = orchestrator()
+
+    scheduled = agent_timers.list_wakes(agent.agent_id)
+
+    assert len(scheduled) == 1
+    assert scheduled[0].payload == {"message": session_ttl.EXPIRY_MESSAGE}
+    assert scheduled[0].every_seconds is None
+    assert scheduled[0].due_at == timers.timestamp(
+        timers.parse_timestamp(agent.record["session_since"])
+        + dt.timedelta(hours=4)
+    )
+
+
+def test_role_ttl_requires_a_supported_positive_duration(beebot_root):
+    make_role(
+        beebot_root,
+        "broken-ttl",
+        'backend = "fake"\ncwd = "workspaces/broken"\n'
+        "[session_ttl]\n"
+        'idle = "0h"\n',
+    )
+
+    with pytest.raises(ag.UnknownRole, match="positive integer"):
+        ag.load_role("broken-ttl")
+
+
+@pytest.mark.parametrize(
+    "config, expected",
+    [
+        ({"idle": "2h"}, session_ttl.Policy(idle_seconds=7200)),
+        ({"max_age": "1d"}, session_ttl.Policy(max_age_seconds=86400)),
+        (
+            {"idle": "2h", "max_age": "1d"},
+            session_ttl.Policy(idle_seconds=7200, max_age_seconds=86400),
+        ),
+    ],
+)
+def test_ttl_policy_accepts_each_supported_limit(config, expected):
+    assert session_ttl.parse_policy(config) == expected
+
+
+def test_a_role_without_ttl_has_no_lifecycle_timer():
+    agent = worker()
+
+    assert agent.ttl_policy is None
+    assert agent_timers.list_wakes(agent.agent_id) == []
+
+
+def test_a_role_without_ttl_treats_the_expiry_words_as_ordinary_input():
+    agent = as_fake(worker())
+
+    agent.spin([InputItem("user", session_ttl.EXPIRY_MESSAGE)])
+
+    assert fake.turns(agent.agent_id) == [
+        [["user", session_ttl.EXPIRY_MESSAGE]]
+    ]
+
+
+def test_successful_activity_moves_idle_expiry_but_preserves_maximum(monkeypatch):
+    agent = as_fake(orchestrator())
+    since = timers.parse_timestamp(agent.record["session_since"])
+    one_hour_later = since + dt.timedelta(hours=1)
+    monkeypatch.setattr(agent_module, "now", lambda: timers.timestamp(one_hour_later))
+
+    agent.spin([InputItem("user", "work")])
+
+    [scheduled] = agent_timers.list_wakes(agent.agent_id)
+    assert scheduled.due_at == timers.timestamp(since + dt.timedelta(hours=5))
+
+
+def test_maximum_age_caps_idle_rescheduling(monkeypatch):
+    agent = as_fake(orchestrator())
+    since = timers.parse_timestamp(agent.record["session_since"])
+    almost_max_age = since + dt.timedelta(hours=23)
+    monkeypatch.setattr(agent_module, "now", lambda: timers.timestamp(almost_max_age))
+
+    agent.spin([InputItem("user", "late activity")])
+
+    [scheduled] = agent_timers.list_wakes(agent.agent_id)
+    assert scheduled.due_at == timers.timestamp(since + dt.timedelta(hours=24))
+
+
+def test_cancelling_ttl_prevents_an_ordinary_turn_from_recreating_it():
+    agent = as_fake(orchestrator())
+    [scheduled] = agent_timers.list_wakes(agent.agent_id)
+    assert agent_timers.cancel_wake(agent.agent_id, scheduled.timer_id)
+
+    agent.spin([InputItem("user", "work")])
+
+    assert agent_timers.list_wakes(agent.agent_id) == []
+
+
+def test_ttl_saves_alone_then_restores_before_the_waiting_input():
+    agent = as_fake(orchestrator())
+    old_session = agent.session_id
+
+    expired = agent.spin(
+        [
+            InputItem("timer:ttl", session_ttl.EXPIRY_MESSAGE),
+            InputItem("user", "new work"),
+        ]
+    )
+
+    turns = fake.turns(agent.agent_id)
+    assert turns[0] == [["timer:ttl", session_ttl.EXPIRY_MESSAGE]]
+    assert turns[1][0][0] == session_ttl.RESTORE_SOURCE
+    assert session_ttl.EXPIRY_MESSAGE in turns[1][0][1]
+    assert turns[1][1] == ["user", "new work"]
+    assert expired.text.endswith("new work")
+    assert agent.session_id != old_session
+    assert agent.status == "active"
+    assert agent.record["session_turns"] == 1
+    assert not session_ttl.handoff_path(agent.agent_id).exists()
+
+
+def test_ttl_without_waiting_input_leaves_the_agent_dormant_until_woken():
+    agent = as_fake(orchestrator())
+    agent_id = agent.agent_id
+
+    expired = agent.spin([InputItem("timer:ttl", session_ttl.EXPIRY_MESSAGE)])
+
+    record = records.read(agent_id)
+    assert expired.text == "session TTL expired; handoff saved"
+    assert record["status"] == records.DORMANT
+    assert record["session_id"] is None
+    assert record["session_since"] is None
+    assert session_ttl.handoff_path(agent_id).read_text("utf-8")
+
+    restored = ag.restore(agent_id)
+    restored.spin([InputItem("user", "continue")])
+
+    turns = fake.turns(agent_id)
+    assert turns[-1][0][0] == session_ttl.RESTORE_SOURCE
+    assert turns[-1][1] == ["user", "continue"]
+    assert not session_ttl.handoff_path(agent_id).exists()
+
+
+def test_the_existing_timer_adapter_drives_session_expiry():
+    agent = as_fake(orchestrator())
+    [scheduled] = agent_timers.list_wakes(agent.agent_id)
+    envelope = agent_timers.poll(timers.parse_timestamp(scheduled.due_at))
+
+    assert envelope is not None
+    dispatch(envelope)
+
+    assert records.read(agent.agent_id)["status"] == records.DORMANT
+    assert agent_timers.list_wakes(agent.agent_id) == []
+
+
+def test_failed_ttl_save_still_detaches_with_a_fallback_handoff():
+    agent = as_fake(orchestrator())
+    fake.fail_session(agent.session_id, "connection reset")
+
+    expired = agent.spin([InputItem("timer:ttl", session_ttl.EXPIRY_MESSAGE)])
+
+    assert expired.text == "session TTL expired; handoff failed"
+    assert agent.status == records.DORMANT
+    assert "expired before it could save" in session_ttl.handoff_path(
+        agent.agent_id
+    ).read_text("utf-8")
