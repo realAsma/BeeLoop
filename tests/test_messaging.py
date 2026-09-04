@@ -79,7 +79,7 @@ def wait_for(predicate, timeout: float = 5) -> None:
         time.sleep(0.01)
 
 
-def test_the_live_server_exposes_exactly_the_two_public_tools():
+def test_the_live_server_exposes_the_bound_messaging_and_timer_tools():
     agent = orchestrator()
 
     async def inspect_server():
@@ -101,7 +101,13 @@ def test_the_live_server_exposes_exactly_the_two_public_tools():
                 )
 
     listed, identity = asyncio.run(inspect_server())
-    assert [tool.name for tool in listed.tools] == ["get_agent_id", "message"]
+    assert [tool.name for tool in listed.tools] == [
+        "get_agent_id",
+        "message",
+        "timer_create",
+        "timer_list",
+        "timer_cancel",
+    ]
     tool = listed.tools[1]
     message = tool.inputSchema
     assert set(message["properties"]) == {"receiver", "msg"}
@@ -153,6 +159,24 @@ def test_identity_is_read_from_the_bound_record_on_every_call():
     records.record_path(agent.agent_id).write_text(json.dumps(record), encoding="utf-8")
 
     assert server.get_agent_id() == "replacement-from-record"
+
+
+def test_timer_tools_can_manage_only_the_bound_agents_record():
+    first = orchestrator()
+    second = ag.create("logger")
+    bind(first)
+
+    created = server.timer_create("check", after="1h")
+
+    assert server.timer_list() == [created]
+    assert records.read(second.agent_id).get("timers", []) == []
+    bind(second)
+    assert server.timer_list() == []
+    assert server.timer_cancel(created["timer_id"]) == "not found"
+    assert records.read(first.agent_id)["timers"] == [created]
+    bind(first)
+    assert server.timer_cancel(created["timer_id"]) == "cancelled"
+    assert server.timer_list() == []
 
 
 @pytest.mark.parametrize(

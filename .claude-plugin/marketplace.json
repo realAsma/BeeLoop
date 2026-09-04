@@ -5,10 +5,10 @@
     {
       "name": "beebot-loop",
       "source": "./plugins/beebot-loop",
-      "description": "Asynchronous messaging between BeeLoop agents: two MCP tools and the skill that drives them.",
+      "description": "Asynchronous messaging and wake timers for BeeLoop agents.",
       "version": "1.0.0",
       "category": "productivity",
-      "keywords": ["messaging", "agents", "routing", "beebot"]
+      "keywords": ["messaging", "agents", "routing", "timers", "beebot"]
     }
   ]
 }

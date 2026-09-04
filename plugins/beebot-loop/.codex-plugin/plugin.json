@@ -1,7 +1,7 @@
 {
   "name": "beebot-loop",
   "version": "1.0.0",
-  "description": "Asynchronous messaging between BeeLoop agents.",
+  "description": "Asynchronous messaging and wake timers for BeeLoop agents.",
   "author": {
     "name": "BeeBot"
   },
@@ -17,11 +17,11 @@
   },
   "interface": {
     "displayName": "BeeBot Loop",
-    "shortDescription": "Message other BeeLoop agents.",
-    "longDescription": "Send asynchronous messages between explicitly authorized BeeLoop agents.",
+    "shortDescription": "Message agents and schedule wake timers.",
+    "longDescription": "Send asynchronous messages between explicitly authorized BeeLoop agents and schedule bound wake timers.",
     "developerName": "BeeBot",
     "category": "Productivity",
     "capabilities": ["Write"],
-    "defaultPrompt": ["Send a message to another BeeLoop agent."]
+    "defaultPrompt": ["Send a message or schedule a wake timer."]
   }
 }

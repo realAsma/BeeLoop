@@ -63,6 +63,18 @@ tries to send: both plugin definitions name `python3`, and `server.py` imports
 `pip install -e .` above installed into. If it is not, point both
 definitions at an interpreter that is.
 
+## Wake timers
+
+Every agent receives bound `timer_create`, `timer_list`, and `timer_cancel` MCP
+tools. A one-shot timer uses `after="30m"`; a recurring timer uses `every="1h"`
+and may include `duration="7d"`. Durations are positive integers ending in
+`s`, `m`, `h`, or `d`.
+
+Timers live in the owning agent's `record.json`. The first created timer installs
+one shared executable adapter at `inputs.d/beebot-timers`. Each poll emits at
+most the globally earliest due wake, addressed directly to its owner. The
+schedule is removed or advanced before dispatch, so delivery is at-most-once.
+
 ## The state store
 
 Long-term work state lives in a separate repo, consumed here as a Claude Code

@@ -8,9 +8,11 @@ making it a tool argument would let a prompt speak as another agent.
 from __future__ import annotations
 
 import os
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from beebot.agents import timers as agent_timers
 from beebot.dispatch import messaging
 from mcp.server.fastmcp import FastMCP
 
@@ -19,7 +21,7 @@ MessagingError = messaging.MessagingError
 AGENT_DIRECTORY: Path | None = None
 mcp = FastMCP(
     "beebot-loop",
-    instructions="Asynchronous messages between explicitly authorized BeeLoop agents.",
+    instructions="Bound asynchronous messaging and wake timers for BeeLoop agents.",
 )
 
 
@@ -40,6 +42,42 @@ def message(receiver: str | dict[str, Any], msg: str) -> str:
     """
     messaging.send(_agent_directory(), receiver, msg)
     return "accepted"
+
+
+@mcp.tool()
+def timer_create(
+    message: str,
+    after: str | None = None,
+    every: str | None = None,
+    duration: str | None = None,
+) -> dict[str, Any]:
+    """Create a wake timer. Pass exactly one of `after` or `every`."""
+    timer = agent_timers.create_wake(
+        messaging.agent_id(_agent_directory()),
+        message=message,
+        after=after,
+        every=every,
+        duration=duration,
+    )
+    return asdict(timer)
+
+
+@mcp.tool()
+def timer_list() -> list[dict[str, Any]]:
+    """List this agent's wake timers in due order."""
+    return [
+        asdict(timer)
+        for timer in agent_timers.list_wakes(messaging.agent_id(_agent_directory()))
+    ]
+
+
+@mcp.tool()
+def timer_cancel(timer_id: str) -> str:
+    """Cancel one of this agent's wake timers."""
+    removed = agent_timers.cancel_wake(
+        messaging.agent_id(_agent_directory()), timer_id
+    )
+    return "cancelled" if removed else "not found"
 
 
 def _agent_directory() -> Path:
