@@ -75,6 +75,18 @@ def test_a_role_without_ttl_treats_the_expiry_words_as_ordinary_input():
     ]
 
 
+def test_ttl_requires_an_exact_expiry_message():
+    agent = as_fake(orchestrator())
+    near_match = session_ttl.EXPIRY_MESSAGE + " "
+
+    agent.spin([InputItem("user", near_match)])
+
+    assert (fake.turns(agent.agent_id), agent.status) == (
+        [[["user", near_match]]],
+        "active",
+    )
+
+
 def test_successful_activity_moves_idle_expiry_but_preserves_maximum(monkeypatch):
     agent = as_fake(orchestrator())
     since = timers.parse_timestamp(agent.record["session_since"])
@@ -166,12 +178,22 @@ def test_the_existing_timer_adapter_drives_session_expiry():
     assert agent_timers.list_wakes(agent.agent_id) == []
 
 
-def test_failed_ttl_save_still_detaches_with_a_fallback_handoff():
+def test_failed_ttl_save_still_detaches_with_a_fallback_handoff(monkeypatch):
     agent = as_fake(orchestrator())
+    attempts = 0
+    deliver = agent.backend.deliver
+
+    def counted_deliver(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        return deliver(*args, **kwargs)
+
+    monkeypatch.setattr(agent.backend, "deliver", counted_deliver)
     fake.fail_session(agent.session_id, "connection reset")
 
     expired = agent.spin([InputItem("timer:ttl", session_ttl.EXPIRY_MESSAGE)])
 
+    assert attempts == 1
     assert expired.text == "session TTL expired; handoff failed"
     assert agent.status == records.DORMANT
     assert "expired before it could save" in session_ttl.handoff_path(
