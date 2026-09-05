@@ -50,7 +50,7 @@ def send(
     sender_directory: Path,
     receiver: str | dict[str, Any],
     msg: str,
-) -> None:
+) -> dict[str, str]:
     """Authorize and asynchronously submit one agent-to-agent message."""
     if not msg.strip():
         raise MessagingError("msg must not be empty")
@@ -73,6 +73,11 @@ def send(
             msg=msg,
         )
     )
+    return {
+        "status": "accepted",
+        "receiver_agent_id": recipient.agent_id,
+        "receiver_role": recipient.record["role"],
+    }
 
 
 def _identity(directory: Path) -> dict[str, str]:

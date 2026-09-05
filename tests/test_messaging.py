@@ -71,6 +71,14 @@ def sender_and_receiver() -> tuple[ag.Agent, ag.Agent]:
     return sender, receiver
 
 
+def accepted(receiver: ag.Agent) -> dict[str, str]:
+    return {
+        "status": "accepted",
+        "receiver_agent_id": receiver.agent_id,
+        "receiver_role": receiver.record["role"],
+    }
+
+
 def wait_for(predicate, timeout: float = 5) -> None:
     deadline = time.monotonic() + timeout
     while not predicate():
@@ -206,7 +214,7 @@ def test_role_id_and_wildcard_grants_union(
     sent = []
     monkeypatch.setattr(messaging, "_submit", sent.append)
 
-    assert server.message(receiver.agent_id, "hello") == "accepted"
+    assert server.message(receiver.agent_id, "hello") == accepted(receiver)
     assert sent == [
         Envelope(
             role=None,
@@ -270,14 +278,14 @@ def test_both_sides_must_allow_and_live_config_edits_take_effect(monkeypatch):
         server.message(receiver.agent_id, "first")
 
     rules(sender, send_roles=["logger"])
-    assert server.message(receiver.agent_id, "second") == "accepted"
+    assert server.message(receiver.agent_id, "second") == accepted(receiver)
 
     rules(receiver)
     with pytest.raises(server.MessagingError, match="does not allow"):
         server.message(receiver.agent_id, "third")
 
     rules(receiver, receive_ids=[sender.agent_id])
-    assert server.message(receiver.agent_id, "fourth") == "accepted"
+    assert server.message(receiver.agent_id, "fourth") == accepted(receiver)
 
 
 def test_accepted_does_not_wait_for_the_receiver_process(monkeypatch):
@@ -309,7 +317,7 @@ def test_accepted_does_not_wait_for_the_receiver_process(monkeypatch):
     process = Process()
     monkeypatch.setattr(messaging.subprocess, "Popen", lambda *args, **kwargs: process)
 
-    assert server.message(receiver.agent_id, "hello") == "accepted"
+    assert server.message(receiver.agent_id, "hello") == accepted(receiver)
     assert process.stdin.closed is True
     assert f"agent_id={receiver.agent_id}".encode() in process.stdin.body
 
@@ -348,7 +356,7 @@ def test_route_creation_requires_a_send_role_grant(beebot_root, monkeypatch):
 
     rules(sender, send_roles=["target"])
     receiver = {"role": "target", "instance": "one"}
-    assert server.message(receiver, "hello") == "accepted"
+    result = server.message(receiver, "hello")
     created = [
         ag.restore(path.parent.name)
         for path in records.runtime("agents").glob("*/record.json")
@@ -356,6 +364,7 @@ def test_route_creation_requires_a_send_role_grant(beebot_root, monkeypatch):
     ]
     assert len(created) == 1
     assert created[0].record["role"] == "target"
+    assert result == accepted(created[0])
     assert route.resolve() == created[0].agent_id
 
 
@@ -444,7 +453,7 @@ def test_idle_delivery_is_detached_framed_and_logged():
     rules(sender, send_ids=[receiver.agent_id])
     rules(receiver, receive_ids=[sender.agent_id])
 
-    assert server.message(receiver.agent_id, "background hello") == "accepted"
+    assert server.message(receiver.agent_id, "background hello") == accepted(receiver)
     wait_for(lambda: bool(fake.turns(receiver.agent_id)))
 
     assert fake.turns(receiver.agent_id) == [
@@ -460,13 +469,13 @@ def test_busy_delivery_parks_then_drains_on_the_next_message():
     held = records.claim(receiver.agent_id, [])
     assert held is not None
     try:
-        assert server.message(receiver.agent_id, "parked") == "accepted"
+        assert server.message(receiver.agent_id, "parked") == accepted(receiver)
         wait_for(lambda: records.queue_path(receiver.agent_id).exists())
         wait_for(lambda: bool(records.queue_path(receiver.agent_id).read_text()))
     finally:
         held.release()
 
-    assert server.message(receiver.agent_id, "drain") == "accepted"
+    assert server.message(receiver.agent_id, "drain") == accepted(receiver)
     wait_for(lambda: records.read(receiver.agent_id)["turns"] == 2)
     delivered = [item for turn in fake.turns(receiver.agent_id) for item in turn]
     assert delivered == [

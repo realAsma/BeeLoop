@@ -32,16 +32,16 @@ def get_agent_id() -> str:
 
 
 @mcp.tool()
-def message(receiver: str | dict[str, Any], msg: str) -> str:
+def message(receiver: str | dict[str, Any], msg: str) -> dict[str, str]:
     """Asynchronously send a message to an agent ID or role route.
 
     A route is an object containing `role` and optional `cwd` and `instance`.
     Missing, empty, or `fresh` instances create a new agent; any other instance
     reuses the latest restorable agent created for that route.
-    Returning `accepted` confirms background dispatch, not model completion.
+    An accepted result identifies the resolved receiver and confirms background
+    dispatch, not model completion.
     """
-    messaging.send(_agent_directory(), receiver, msg)
-    return "accepted"
+    return messaging.send(_agent_directory(), receiver, msg)
 
 
 @mcp.tool()

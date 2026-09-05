@@ -6,9 +6,10 @@ description: Send an asynchronous message to another BeeLoop agent or reply to o
 # BeeLoop messaging
 
 Use `get_agent_id()` when you need your own stable agent ID. Send work with
-`message(receiver, msg)`. The call returning `accepted` means the message was
-handed to the background dispatcher, not that the other agent has completed a
-turn.
+`message(receiver, msg)`. The result contains `status`, `receiver_agent_id`, and
+`receiver_role`. A status of `accepted` means the message was handed to the
+background dispatcher, not that the other agent has completed a turn. Use the
+returned agent ID to continue messaging the exact agent resolved from a route.
 
 Incoming agent messages have a source such as `agent:<id>`. Reply explicitly by
 calling `message(receiver="<id>", msg="...")`; replies require permissions in
