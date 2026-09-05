@@ -37,7 +37,7 @@ contain `=`; past `msg=` there are no comments, only body.
 | `agent_id` | continue **this** conversation. |
 | `cwd` | where the new agent works, overriding the role's own. Relative paths are under `BEEBOT_ROOT`. Optional, and only meaningful alongside `role`. |
 | `instance` | conversation persistence under one `(source, cwd, role)`. Missing, empty, or exact lowercase `fresh` always creates a new agent. Every other non-empty value, including `default`, reuses the latest restorable agent for that route. Names are scoped to that triple, not global. |
-| `source` | *who caused this*, never where it goes. Compared for equality, never parsed. |
+| `source` | The source session that caused the input and, when supported, the handle an agent uses to find its reply workflow. BeeLoop compares it for equality and never parses it. |
 | `msg` | prose: what happened and where to look. |
 
 `agent_id` and `role` are never both meaningful — one continues, the other
@@ -46,6 +46,18 @@ precedence, and so is one carrying `cwd` alongside `agent_id`: a cwd is fixed
 when the agent is created. `instance` alongside `agent_id` is rejected too — an
 `agent_id` names one exact agent, while an `instance` only selects which agent a
 key resolves to.
+
+Runtime inputs name sources as `<input-name>:<session-key>`. The input name is
+lowercase hyphenated and selects `runtime/inputs/<input-name>/`; the session key
+is a stable identifier for the smallest external conversation that shares a
+reply destination. For example, every message in one Slack thread uses the
+same complete source, while a different thread uses a different source.
+Source-specific workflows may interpret this convention, but the gateway and
+router continue to treat the value as opaque.
+
+`source` is only part of a route key. Reusing one agent for a source session
+also requires the same `cwd` and `role` and a stable non-`fresh` `instance`.
+Missing, empty, or `fresh` instances create a new agent for every event.
 
 ## Rules
 
@@ -62,6 +74,11 @@ source depends on — receivers, queues, tokens. Nothing else will do it for you
 
 **Say what happened and where to look, not what to do.** Pass links and ids; the
 agent decides. Never raw binaries or agent-specific wire formats.
+
+**Own replies to the source.** If an input supports replies, keep the reply
+implementation under `runtime/inputs/<input-name>/`. An optional `SKILL.md` in
+that directory can tell agents how to interpret the source and invoke the
+helper. A model response is not delivered to the external source automatically.
 
 **No trailing newline is guaranteed.** The loop captures stdout with command
 substitution, which strips them, and forwards the bytes verbatim.

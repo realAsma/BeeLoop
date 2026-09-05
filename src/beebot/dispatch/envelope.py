@@ -23,10 +23,10 @@ class Envelope:
     BY IDENTITY is `agent_id`: exact, never creates, and usable only if you
     already hold the id.
 
-    `source` is who CAUSED this, never where it goes. Compared for equality,
-    never parsed -- the moment anything reads structure out of it, adapters stop
-    being free to choose their own scheme. It is only PART of the routing key:
-    one source may drive several agents, and it says so by varying `role`,
+    `source` is the session that CAUSED this and, when supported, the model's
+    handle for finding its reply workflow, never an agent destination. The core
+    compares it for equality and never parses it. It is only PART of the routing
+    key: one source may drive several agents, and it says so by varying `role`,
     `cwd` and `instance` rather than by encoding them into itself.
 
     `cwd` belongs to `role`: it is fixed when the agent is created, which is why
