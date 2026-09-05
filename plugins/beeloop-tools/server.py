@@ -1,4 +1,4 @@
-"""Bound MCP tools for authorized asynchronous BeeBot messaging.
+"""Bound MCP tools for authorized asynchronous BeeLoop messaging.
 
 The binding arrives in `BEEBOT_AGENT_DIR`, out of the model's reach. The
 messaging SDK derives the sender's identity and grants from that directory, so
@@ -20,7 +20,7 @@ MessagingError = messaging.MessagingError
 
 AGENT_DIRECTORY: Path | None = None
 mcp = FastMCP(
-    "beebot-loop",
+    "beeloop-tools",
     instructions="Bound asynchronous messaging and wake timers for BeeLoop agents.",
 )
 

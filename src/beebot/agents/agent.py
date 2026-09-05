@@ -201,7 +201,7 @@ class Agent:
             saved = False
             handoff = (
                 "The previous session expired before it could save. Recover any "
-                "existing work for this cwd from BeeBot State."
+                "existing work for this cwd from BeeLoop State."
             )
 
         try:

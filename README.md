@@ -29,12 +29,15 @@ Tests: `pytest_pwd tests/ -q` (after the install).
 
 ## The messaging plugin
 
-Agents talk to each other through `plugins/beebot-loop`, a plugin installed
+Agents talk to each other through `plugins/beeloop-tools`, a plugin installed
 once into the tool:
 
-```
+```sh
 /plugin marketplace add .
-/plugin install beebot-loop@beebot
+/plugin install beeloop-tools@beeloop-tools
+
+codex plugin marketplace add .
+codex plugin add beeloop-tools@beeloop-tools
 ```
 
 Installed rather than passed per invocation. The backend used to hand every
@@ -87,7 +90,7 @@ max_age = "24h"
 ```
 
 TTL uses an ordinary visible, cancellable one-shot timer. When it fires, the old
-session receives one final turn asking it to save to BeeBot State and return a
+session receives one final turn asking it to save to BeeLoop State and return a
 continuation handoff. BeeBot caches that response in the agent directory and
 detaches the backend session. The stable agent ID and its routes remain intact.
 
@@ -110,7 +113,7 @@ Then, in Claude Code:
 
 ```
 /plugin marketplace add ./state_store
-/plugin install beebot-state@beebot
+/plugin install beeloop-state@beeloop-state
 ```
 
 `state_store/` is git-ignored here -- it is its own repository.

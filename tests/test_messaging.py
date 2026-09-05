@@ -26,9 +26,9 @@ from tests.conftest import as_fake, make_role, orchestrator
 # package and is not installed: the plugin is installed into Claude Code, which
 # runs this exact file from wherever it put it. An import would need a
 # `plugins/` on sys.path that no deployment has.
-PLUGIN_PATH = Path(__file__).resolve().parents[1] / "plugins" / "beebot-loop"
+PLUGIN_PATH = Path(__file__).resolve().parents[1] / "plugins" / "beeloop-tools"
 SERVER_PATH = PLUGIN_PATH / "server.py"
-_spec = importlib.util.spec_from_file_location("beebot_loop_server", SERVER_PATH)
+_spec = importlib.util.spec_from_file_location("beeloop_tools_server", SERVER_PATH)
 server = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = server
 _spec.loader.exec_module(server)
@@ -118,13 +118,13 @@ def test_the_live_server_exposes_the_bound_messaging_and_timer_tools():
 
 def test_the_plugin_definitions_bind_each_tools_stdio_environment():
     claude = json.loads((PLUGIN_PATH / ".mcp.json").read_text("utf-8"))
-    claude_server = claude["mcpServers"]["beebot-loop"]
+    claude_server = claude["mcpServers"]["beeloop-tools"]
     assert claude_server["args"] == ["${CLAUDE_PLUGIN_ROOT}/server.py"]
 
     codex = json.loads(
         (PLUGIN_PATH / ".codex-plugin" / "plugin.json").read_text("utf-8")
     )
-    codex_server = codex["mcpServers"]["beebot-loop"]
+    codex_server = codex["mcpServers"]["beeloop-tools"]
     assert codex_server["args"] == ["server.py"]
     assert codex_server["cwd"] == "."
     assert codex_server["env_vars"] == ["BEEBOT_AGENT_DIR", "BEEBOT_ROOT"]

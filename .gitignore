@@ -6,6 +6,9 @@
 !/src/**
 !/plugins/**
 !/.claude-plugin/marketplace.json
+!/.agents/
+!/.agents/plugins/
+!/.agents/plugins/marketplace.json
 !/gateway/**
 !/configs/**
 !/tests/**

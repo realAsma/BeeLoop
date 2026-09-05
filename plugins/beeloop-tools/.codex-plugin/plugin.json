@@ -1,13 +1,13 @@
 {
-  "name": "beebot-loop",
+  "name": "beeloop-tools",
   "version": "1.0.0",
   "description": "Asynchronous messaging and wake timers for BeeLoop agents.",
   "author": {
-    "name": "BeeBot"
+    "name": "BeeLoop"
   },
   "skills": "./skills/",
   "mcpServers": {
-    "beebot-loop": {
+    "beeloop-tools": {
       "type": "stdio",
       "command": "python3",
       "args": ["server.py"],
@@ -16,10 +16,10 @@
     }
   },
   "interface": {
-    "displayName": "BeeBot Loop",
+    "displayName": "BeeLoop Tools",
     "shortDescription": "Message agents and schedule wake timers.",
     "longDescription": "Send asynchronous messages between explicitly authorized BeeLoop agents and schedule bound wake timers.",
-    "developerName": "BeeBot",
+    "developerName": "BeeLoop",
     "category": "Productivity",
     "capabilities": ["Write"],
     "defaultPrompt": ["Send a message or schedule a wake timer."]

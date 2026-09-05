@@ -140,7 +140,7 @@ def clear_handoff(agent_id: str) -> None:
 def restore_input(handoff: str) -> InputItem:
     return InputItem(
         RESTORE_SOURCE,
-        "Restore the referenced BeeBot State first, then process the remaining "
+        "Restore the referenced BeeLoop State first, then process the remaining "
         f"inputs in order.\n\nPrevious session handoff:\n{handoff}",
     )
 

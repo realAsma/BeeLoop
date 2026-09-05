@@ -1,14 +1,14 @@
 {
-  "name": "beebot",
-  "owner": {"name": "BeeBot"},
+  "name": "beeloop-tools",
+  "owner": {"name": "BeeLoop"},
   "plugins": [
     {
-      "name": "beebot-loop",
-      "source": "./plugins/beebot-loop",
+      "name": "beeloop-tools",
+      "source": "./plugins/beeloop-tools",
       "description": "Asynchronous messaging and wake timers for BeeLoop agents.",
       "version": "1.0.0",
       "category": "productivity",
-      "keywords": ["messaging", "agents", "routing", "timers", "beebot"]
+      "keywords": ["messaging", "agents", "routing", "timers", "beeloop"]
     }
   ]
 }

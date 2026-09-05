@@ -1,8 +1,8 @@
 {
-  "name": "beebot-loop",
+  "name": "beeloop-tools",
   "version": "1.0.0",
   "description": "Asynchronous messaging and wake timers for BeeLoop agents.",
   "author": {
-    "name": "BeeBot"
+    "name": "BeeLoop"
   }
 }
