@@ -1,8 +1,9 @@
 """Bound MCP tools for authorized asynchronous BeeLoop messaging.
 
 The binding arrives in `BEEBOT_AGENT_DIR`, out of the model's reach. The
-messaging SDK derives the sender's identity and grants from that directory, so
-making it a tool argument would let a prompt speak as another agent.
+messaging SDK derives the sender's identity and outbound policy from that
+directory, so making it a tool argument would let a prompt speak as another
+agent.
 """
 
 from __future__ import annotations

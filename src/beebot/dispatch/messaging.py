@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from beebot import agents as ag
-from beebot.agents.records import agent_path, root
+from beebot.agents.records import root
 from beebot.agents.roles import load_role, workspace
 from beebot.dispatch.envelope import Envelope, serialize
 from beebot.dispatch.routes import Route, agent_for
@@ -22,7 +22,7 @@ class MessagingError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class Grants:
+class AllowedRecipients:
     roles: frozenset[str]
     ids: frozenset[str]
 
@@ -56,14 +56,8 @@ def send(
         raise MessagingError("msg must not be empty")
 
     sender = _identity(sender_directory)
-    grants = _grants(sender_directory / "config.toml", "send")
-    recipient = _resolve(receiver, sender, grants)
-    receive = _grants(agent_path(recipient.agent_id) / "config.toml", "receive")
-    if not receive.allows(sender["role"], sender["agent_id"]):
-        raise MessagingError(
-            f"agent {recipient.agent_id!r} does not allow messages from "
-            f"role {sender['role']!r} or agent {sender['agent_id']!r}"
-        )
+    allowed = _allowed_recipients(sender_directory / "config.toml")
+    recipient = _resolve(receiver, sender, allowed)
 
     _submit(
         Envelope(
@@ -92,23 +86,23 @@ def _identity(directory: Path) -> dict[str, str]:
         raise MessagingError(f"cannot read agent identity from {path}: {exc}") from exc
 
 
-def _grants(path: Path, direction: str) -> Grants:
+def _allowed_recipients(path: Path) -> AllowedRecipients:
     try:
         config = tomllib.loads(path.read_text("utf-8")) if path.exists() else {}
-        rules = config.get("messaging", {}).get(direction, {})
-        roles = _string_list(rules.get("roles", []), path, direction, "roles")
-        ids = _string_list(rules.get("ids", []), path, direction, "ids")
+        rules = config.get("messaging", {}).get("allowed_recipients", {})
+        roles = _string_list(rules.get("roles", []), path, "roles")
+        ids = _string_list(rules.get("ids", []), path, "ids")
     except (OSError, tomllib.TOMLDecodeError, AttributeError) as exc:
-        raise MessagingError(f"cannot read messaging rules from {path}: {exc}") from exc
-    return Grants(frozenset(roles), frozenset(ids))
+        raise MessagingError(
+            f"cannot read messaging.allowed_recipients from {path}: {exc}"
+        ) from exc
+    return AllowedRecipients(frozenset(roles), frozenset(ids))
 
 
-def _string_list(
-    value: Any, path: Path, direction: str, field: str
-) -> list[str]:
+def _string_list(value: Any, path: Path, field: str) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise MessagingError(
-            f"{path}: messaging.{direction}.{field} must be a list of strings"
+            f"{path}: messaging.allowed_recipients.{field} must be a list of strings"
         )
     return value
 
@@ -116,7 +110,7 @@ def _string_list(
 def _resolve(
     receiver: str | dict[str, Any],
     sender: dict[str, str],
-    send: Grants,
+    allowed: AllowedRecipients,
 ) -> ag.Agent:
     if isinstance(receiver, str):
         recipient = ag.restore(receiver)
@@ -125,22 +119,15 @@ def _resolve(
         existing = route.resolve()
         recipient = _restore(existing) if existing else None
         if recipient is None:
-            if not send.allows_role(route.role):
+            if not allowed.allows_role(route.role):
                 raise MessagingError(
                     f"role {route.role!r} is not allowed to create a message route"
-                )
-            role_config = root() / "configs" / "roles" / route.role / "role.toml"
-            receive = _grants(role_config, "receive")
-            if not receive.allows(sender["role"], sender["agent_id"]):
-                raise MessagingError(
-                    f"role {route.role!r} does not allow messages from "
-                    f"role {sender['role']!r} or agent {sender['agent_id']!r}"
                 )
             recipient = agent_for(route)
     else:
         raise MessagingError("receiver must be an agent ID or a route object")
 
-    if not send.allows(recipient.record["role"], recipient.agent_id):
+    if not allowed.allows(recipient.record["role"], recipient.agent_id):
         raise MessagingError(
             f"agent {sender['agent_id']!r} may not send to role "
             f"{recipient.record['role']!r} or agent {recipient.agent_id!r}"

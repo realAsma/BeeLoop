@@ -51,8 +51,23 @@ it as `BEEBOT_AGENT_DIR` in the child's environment. Claude Code passes its
 environment down to the stdio MCP servers it starts (verified against 2.1.257),
 so the server reads its binding -- and the inherited `BEEBOT_ROOT` -- from
 there. Out-of-band on purpose: the server derives the sender's identity and
-grants from that directory, so if it were a tool argument, anything the model
-read could make it send under someone else's name.
+outbound policy from that directory, so if it were a tool argument, anything
+the model read could make it send under someone else's name.
+
+Messaging is denied by default. Each agent's snapshotted `config.toml` owns the
+recipients that agent may message:
+
+```toml
+[messaging.allowed_recipients]
+roles = ["worker", "logger"]
+ids = ["0198ff2a-0000-7000-8000-000000000000"]
+```
+
+Roles and exact agent IDs are unioned, and `"*"` in either list allows every
+existing recipient. Creating a new role route still requires that role, or
+`"*"`, in `roles`; an ID wildcard cannot create one. Recipients do not maintain
+an inbound allowlist. A reply is a new outbound message, so the replying agent's
+own policy must allow the original sender.
 
 Codex uses the inline MCP definition in `.codex-plugin/plugin.json`. Unlike
 Claude, it forwards only named variables to stdio servers, so that definition

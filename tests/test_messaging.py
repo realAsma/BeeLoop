@@ -48,18 +48,13 @@ def bind(agent: ag.Agent) -> None:
 def rules(
     agent: ag.Agent,
     *,
-    send_roles: list[str] | None = None,
-    send_ids: list[str] | None = None,
-    receive_roles: list[str] | None = None,
-    receive_ids: list[str] | None = None,
+    roles: list[str] | None = None,
+    ids: list[str] | None = None,
 ) -> None:
     body = (
-        "[messaging.send]\n"
-        f"roles = {json.dumps(send_roles or [])}\n"
-        f"ids = {json.dumps(send_ids or [])}\n\n"
-        "[messaging.receive]\n"
-        f"roles = {json.dumps(receive_roles or [])}\n"
-        f"ids = {json.dumps(receive_ids or [])}\n"
+        "[messaging.allowed_recipients]\n"
+        f"roles = {json.dumps(roles or [])}\n"
+        f"ids = {json.dumps(ids or [])}\n"
     )
     (records.agent_path(agent.agent_id) / "config.toml").write_text(body, encoding="utf-8")
 
@@ -190,27 +185,21 @@ def test_timer_tools_can_manage_only_the_bound_agents_record():
 
 
 @pytest.mark.parametrize(
-    "sender_grant,receiver_grant",
+    "grant",
     [
-        ({"send_roles": ["logger"]}, {"receive_roles": ["orchestrator"]}),
-        ({"send_ids": ["receiver"]}, {"receive_ids": ["sender"]}),
-        ({"send_roles": ["*"]}, {"receive_ids": ["*"]}),
+        {"roles": ["logger"]},
+        {"ids": ["receiver"]},
+        {"roles": ["*"]},
+        {"ids": ["*"]},
     ],
 )
-def test_role_id_and_wildcard_grants_union(
-    monkeypatch, sender_grant, receiver_grant
-):
+def test_role_id_and_wildcard_allowances_union(monkeypatch, grant):
     sender, receiver = sender_and_receiver()
-    sender_grant = {
+    grant = {
         key: [receiver.agent_id if value == "receiver" else value for value in values]
-        for key, values in sender_grant.items()
+        for key, values in grant.items()
     }
-    receiver_grant = {
-        key: [sender.agent_id if value == "sender" else value for value in values]
-        for key, values in receiver_grant.items()
-    }
-    rules(sender, **sender_grant)
-    rules(receiver, **receiver_grant)
+    rules(sender, **grant)
     sent = []
     monkeypatch.setattr(messaging, "_submit", sent.append)
 
@@ -225,8 +214,11 @@ def test_role_id_and_wildcard_grants_union(
     ]
 
 
-def test_missing_and_empty_rules_deny_without_starting_dispatch(monkeypatch):
+@pytest.mark.parametrize("empty", [False, True])
+def test_missing_and_empty_rules_deny_without_starting_dispatch(monkeypatch, empty):
     sender, receiver = sender_and_receiver()
+    if empty:
+        rules(sender)
     called = False
 
     def dispatch(*args):
@@ -261,37 +253,62 @@ def test_empty_messages_are_refused_before_dispatch(monkeypatch):
 def test_malformed_receivers_are_refused(receiver, match, monkeypatch):
     sender = orchestrator()
     bind(sender)
-    rules(sender, send_roles=["logger"])
+    rules(sender, roles=["logger"])
     monkeypatch.setattr(messaging, "_submit", lambda *args: pytest.fail("dispatched"))
 
     with pytest.raises(server.MessagingError, match=match):
         server.message(receiver, "hello")
 
 
-def test_both_sides_must_allow_and_live_config_edits_take_effect(monkeypatch):
+def test_live_sender_config_edits_take_effect(monkeypatch):
     sender, receiver = sender_and_receiver()
     rules(sender)
-    rules(receiver, receive_ids=[sender.agent_id])
     monkeypatch.setattr(messaging, "_submit", lambda *args: None)
 
     with pytest.raises(server.MessagingError, match="may not send"):
         server.message(receiver.agent_id, "first")
 
-    rules(sender, send_roles=["logger"])
+    rules(sender, roles=["logger"])
     assert server.message(receiver.agent_id, "second") == accepted(receiver)
 
-    rules(receiver)
-    with pytest.raises(server.MessagingError, match="does not allow"):
+    rules(sender)
+    with pytest.raises(server.MessagingError, match="may not send"):
         server.message(receiver.agent_id, "third")
 
-    rules(receiver, receive_ids=[sender.agent_id])
+    rules(sender, ids=[receiver.agent_id])
     assert server.message(receiver.agent_id, "fourth") == accepted(receiver)
+
+
+def test_recipient_config_is_not_read(monkeypatch):
+    sender, receiver = sender_and_receiver()
+    rules(sender, roles=["logger"])
+    recipient_config = records.agent_path(receiver.agent_id) / "config.toml"
+    recipient_config.write_text(
+        '[messaging.allowed_recipients]\nroles = "not a list"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(messaging, "_submit", lambda *args: None)
+
+    assert server.message(receiver.agent_id, "hello") == accepted(receiver)
+
+
+@pytest.mark.parametrize("field,value", [("roles", '"logger"'), ("ids", '{}')])
+def test_malformed_allowed_recipient_lists_name_the_policy(field, value):
+    sender, receiver = sender_and_receiver()
+    config = records.agent_path(sender.agent_id) / "config.toml"
+    config.write_text(
+        f"[messaging.allowed_recipients]\n{field} = {value}\n", encoding="utf-8"
+    )
+
+    with pytest.raises(
+        server.MessagingError,
+        match=rf"messaging\.allowed_recipients\.{field}",
+    ):
+        server.message(receiver.agent_id, "hello")
 
 
 def test_accepted_does_not_wait_for_the_receiver_process(monkeypatch):
     sender, receiver = sender_and_receiver()
-    rules(sender, send_ids=[receiver.agent_id])
-    rules(receiver, receive_ids=[sender.agent_id])
+    rules(sender, ids=[receiver.agent_id])
 
     class Input:
         def __init__(self):
@@ -325,22 +342,24 @@ def test_accepted_does_not_wait_for_the_receiver_process(monkeypatch):
 def test_an_exact_unknown_id_is_refused():
     sender = orchestrator()
     bind(sender)
-    rules(sender, send_ids=["*"])
+    rules(sender, ids=["*"])
 
     with pytest.raises(ag.UnknownAgent):
         server.message("0198ff2a-0000-7000-8000-000000000000", "hello")
 
 
-def test_route_creation_requires_a_send_role_grant(beebot_root, monkeypatch):
+@pytest.mark.parametrize(
+    "ids", [["*"], ["0198ff2a-0000-7000-8000-000000000000"]]
+)
+def test_route_creation_requires_an_allowed_role(beebot_root, monkeypatch, ids):
     make_role(
         beebot_root,
         "target",
-        'backend = "fake"\ncwd = "workspaces/target"\n'
-        '[messaging.receive]\nroles = ["orchestrator"]\nids = []\n',
+        'backend = "fake"\ncwd = "workspaces/target"\n',
     )
     sender = orchestrator()
     bind(sender)
-    rules(sender, send_ids=["*"])
+    rules(sender, ids=ids)
     monkeypatch.setattr(messaging, "_submit", lambda *args: None)
     route = Route(
         source=f"agent:{sender.agent_id}",
@@ -354,7 +373,7 @@ def test_route_creation_requires_a_send_role_grant(beebot_root, monkeypatch):
         server.message({"role": "target", "instance": "one"}, "hello")
     assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
 
-    rules(sender, send_roles=["target"])
+    rules(sender, roles=["target"])
     receiver = {"role": "target", "instance": "one"}
     result = server.message(receiver, "hello")
     created = [
@@ -375,12 +394,11 @@ def test_ephemeral_message_routes_create_a_new_agent_each_time(
     make_role(
         beebot_root,
         "target",
-        'backend = "fake"\ncwd = "workspaces/target"\n'
-        '[messaging.receive]\nroles = ["orchestrator"]\nids = []\n',
+        'backend = "fake"\ncwd = "workspaces/target"\n',
     )
     sender = orchestrator()
     bind(sender)
-    rules(sender, send_roles=["target"])
+    rules(sender, roles=["target"])
     submitted = []
     monkeypatch.setattr(messaging, "_submit", submitted.append)
     receiver = {"role": "target"}
@@ -402,12 +420,11 @@ def test_fresh_message_routes_require_role_creation_permission(
     make_role(
         beebot_root,
         "target",
-        'backend = "fake"\ncwd = "workspaces/target"\n'
-        '[messaging.receive]\nroles = ["orchestrator"]\nids = []\n',
+        'backend = "fake"\ncwd = "workspaces/target"\n',
     )
     sender = orchestrator()
     bind(sender)
-    rules(sender, send_ids=["*"])
+    rules(sender, ids=["*"])
     monkeypatch.setattr(messaging, "_submit", lambda *args: None)
 
     with pytest.raises(server.MessagingError, match="not allowed to create"):
@@ -420,12 +437,11 @@ def test_named_message_routes_reuse_and_remain_distinct(beebot_root, monkeypatch
     make_role(
         beebot_root,
         "target",
-        'backend = "fake"\ncwd = "workspaces/target"\n'
-        '[messaging.receive]\nroles = ["orchestrator"]\nids = []\n',
+        'backend = "fake"\ncwd = "workspaces/target"\n',
     )
     sender = orchestrator()
     bind(sender)
-    rules(sender, send_roles=["target"])
+    rules(sender, roles=["target"])
     submitted = []
     monkeypatch.setattr(messaging, "_submit", submitted.append)
 
@@ -441,7 +457,7 @@ def test_named_message_routes_reuse_and_remain_distinct(beebot_root, monkeypatch
 def test_receiver_routes_reject_unknown_fields(monkeypatch):
     sender = orchestrator()
     bind(sender)
-    rules(sender, send_roles=["logger"])
+    rules(sender, roles=["logger"])
     monkeypatch.setattr(messaging, "_submit", lambda *args: None)
 
     with pytest.raises(server.MessagingError, match="instnace"):
@@ -450,8 +466,7 @@ def test_receiver_routes_reject_unknown_fields(monkeypatch):
 
 def test_idle_delivery_is_detached_framed_and_logged():
     sender, receiver = sender_and_receiver()
-    rules(sender, send_ids=[receiver.agent_id])
-    rules(receiver, receive_ids=[sender.agent_id])
+    rules(sender, ids=[receiver.agent_id])
 
     assert server.message(receiver.agent_id, "background hello") == accepted(receiver)
     wait_for(lambda: bool(fake.turns(receiver.agent_id)))
@@ -464,8 +479,7 @@ def test_idle_delivery_is_detached_framed_and_logged():
 
 def test_busy_delivery_parks_then_drains_on_the_next_message():
     sender, receiver = sender_and_receiver()
-    rules(sender, send_roles=["logger"])
-    rules(receiver, receive_roles=["orchestrator"])
+    rules(sender, roles=["logger"])
     held = records.claim(receiver.agent_id, [])
     assert held is not None
     try:
