@@ -10,12 +10,6 @@ defines the envelope contract.
 
 For each input:
 
-- Choose a lowercase hyphenated `<input-name>`. Emit every source as
-  `<input-name>:<session-key>`, where the session key is the smallest stable
-  external conversation that shares a reply destination. Reuse the complete
-  source for that conversation and use a different source for a different one;
-  for example, all messages in one Slack thread share a source, while separate
-  threads do not.
 - Put the substantive adapter and helper code in
   `$BEEBOT_ROOT/runtime/inputs/<input-name>/`.
 - Create `$BEEBOT_ROOT/inputs.d/<input-name>` as a thin launcher that resolves
@@ -23,12 +17,6 @@ For each input:
   envelope-building logic in the launcher.
 - Apply every polling, stdout, envelope, routing, and dependency-ownership rule
   from `inputs.d/README.md` to the runtime implementation.
-
-`source` tells the agent which external session caused the input and provides
-the handle needed to reply. It is also part of the router key. To reuse one
-agent for a source session, keep `role` and `cwd` stable and use a stable
-non-`fresh` `instance`, normally `default`. Omit `instance`, leave it empty, or
-use `fresh` when each event should create a new agent.
 
 If the source accepts replies, keep its reply implementation in the same
 runtime input directory. Its interface is input-specific, but it must accept
