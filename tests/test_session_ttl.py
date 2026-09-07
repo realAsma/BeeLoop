@@ -16,21 +16,36 @@ from beebot.dispatch.dispatch import dispatch
 from tests.conftest import as_fake, make_role, orchestrator, worker
 
 
-def test_orchestrator_starts_with_the_role_ttl_as_an_ordinary_timer():
+def ttl_timer(agent):
+    return next(
+        timer
+        for timer in agent_timers.list_wakes(agent.agent_id)
+        if session_ttl.is_expiry_timer(timer)
+    )
+
+
+def test_orchestrator_starts_with_its_role_lifecycle_timers():
     agent = orchestrator()
 
     scheduled = agent_timers.list_wakes(agent.agent_id)
+    ttl = ttl_timer(agent)
+    heartbeat = next(
+        timer for timer in scheduled if not session_ttl.is_expiry_timer(timer)
+    )
 
-    assert len(scheduled) == 1
-    assert scheduled[0].payload == {
-        "message": session_ttl.EXPIRY_MESSAGE,
+    assert len(scheduled) == 2
+    assert ttl.payload == {
+        "message": agent.role.prompt("session_expire"),
         "_source": session_ttl.EXPIRY_SOURCE,
     }
-    assert scheduled[0].every_seconds is None
-    assert scheduled[0].due_at == timers.timestamp(
+    assert ttl.every_seconds is None
+    assert ttl.due_at == timers.timestamp(
         timers.parse_timestamp(agent.record["session_since"])
-        + dt.timedelta(hours=4)
+        + dt.timedelta(hours=1)
     )
+    assert heartbeat.payload == {"message": agent.role.prompt("heartbeat")}
+    assert heartbeat.every_seconds == 14400
+    assert heartbeat.until is None
 
 
 def test_role_ttl_requires_a_supported_positive_duration(beebot_root):
@@ -84,7 +99,12 @@ def test_ttl_requires_the_typed_timer_source():
     agent.spin([InputItem("user", session_ttl.EXPIRY_MESSAGE)])
 
     assert (fake.turns(agent.agent_id), agent.status) == (
-        [[["user", session_ttl.EXPIRY_MESSAGE]]],
+        [
+            [
+                [session_ttl.INIT_SOURCE, agent.role.prompt("session_init")],
+                ["user", session_ttl.EXPIRY_MESSAGE],
+            ]
+        ],
         "active",
     )
 
@@ -149,8 +169,8 @@ def test_successful_activity_moves_idle_expiry_but_preserves_maximum(monkeypatch
 
     agent.spin([InputItem("user", "work")])
 
-    [scheduled] = agent_timers.list_wakes(agent.agent_id)
-    assert scheduled.due_at == timers.timestamp(since + dt.timedelta(hours=5))
+    scheduled = ttl_timer(agent)
+    assert scheduled.due_at == timers.timestamp(since + dt.timedelta(hours=2))
 
 
 def test_maximum_age_caps_idle_rescheduling(monkeypatch):
@@ -161,18 +181,23 @@ def test_maximum_age_caps_idle_rescheduling(monkeypatch):
 
     agent.spin([InputItem("user", "late activity")])
 
-    [scheduled] = agent_timers.list_wakes(agent.agent_id)
+    scheduled = ttl_timer(agent)
     assert scheduled.due_at == timers.timestamp(since + dt.timedelta(hours=24))
 
 
 def test_cancelling_ttl_prevents_an_ordinary_turn_from_recreating_it():
     agent = as_fake(orchestrator())
-    [scheduled] = agent_timers.list_wakes(agent.agent_id)
+    scheduled = ttl_timer(agent)
+    heartbeat = next(
+        timer
+        for timer in agent_timers.list_wakes(agent.agent_id)
+        if timer.timer_id != scheduled.timer_id
+    )
     assert agent_timers.cancel_wake(agent.agent_id, scheduled.timer_id)
 
     agent.spin([InputItem("user", "work")])
 
-    assert agent_timers.list_wakes(agent.agent_id) == []
+    assert agent_timers.list_wakes(agent.agent_id) == [heartbeat]
 
 
 def test_ttl_saves_alone_then_restores_before_the_waiting_input():
@@ -232,7 +257,12 @@ def test_ttl_without_waiting_input_leaves_the_agent_dormant_until_woken():
 
 def test_the_existing_timer_adapter_drives_session_expiry():
     agent = as_fake(orchestrator())
-    [scheduled] = agent_timers.list_wakes(agent.agent_id)
+    scheduled = ttl_timer(agent)
+    heartbeat = next(
+        timer
+        for timer in agent_timers.list_wakes(agent.agent_id)
+        if timer.timer_id != scheduled.timer_id
+    )
     envelope = agent_timers.poll(timers.parse_timestamp(scheduled.due_at))
 
     assert envelope is not None
@@ -240,12 +270,12 @@ def test_the_existing_timer_adapter_drives_session_expiry():
     dispatch(envelope)
 
     assert records.read(agent.agent_id)["status"] == records.DORMANT
-    assert agent_timers.list_wakes(agent.agent_id) == []
+    assert agent_timers.list_wakes(agent.agent_id) == [heartbeat]
 
 
 def test_an_armed_ttl_keeps_its_identity_after_a_role_prompt_edit(beebot_root):
     agent = as_fake(orchestrator())
-    [scheduled] = agent_timers.list_wakes(agent.agent_id)
+    scheduled = ttl_timer(agent)
     role_config = beebot_root / "configs" / "roles" / "orchestrator" / "role.toml"
     role_config.write_text(
         "[prompts]\nsession_expire = \"new expiry words\"\n",

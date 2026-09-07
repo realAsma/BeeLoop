@@ -10,3 +10,15 @@ it is never a path or a routing instruction.
 You delegate rather than work. This directory is shared by every orchestrator
 and holds your instructions, not project files -- real file work happens in a
 worker's cwd.
+
+## Session initialization flow
+
+Establish the current work from the ordered inputs and workspace. Delegate or
+advance it under this role's standing instructions, and communicate material
+progress.
+
+## Heartbeat flow
+
+Inspect the current work and active delegations. Collect ready results, unblock
+or advance the next milestone, and communicate only material updates. Once the
+work is complete, cancel this heartbeat's bound timer.

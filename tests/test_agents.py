@@ -112,6 +112,35 @@ def test_a_broken_role_config_names_the_file_instead_of_leaking_a_parse_error(be
         ag.load_role("worker")
 
 
+def test_orchestrator_role_defines_its_lifecycle_flows():
+    role = ag.load_role("orchestrator")
+    instructions = (role.template / "AGENTS.md").read_text("utf-8")
+
+    assert role.session_ttl == session_ttl.Policy(
+        idle_seconds=3600, max_age_seconds=86400
+    )
+    assert role.heartbeat == "4h"
+    assert role.prompts == {
+        "session_init": (
+            "This is session initialization. Use the session initialization flow."
+        ),
+        "session_expire": (
+            "This session is expiring. Use the BeeBot State save flow and return "
+            "a concise handoff hint for continuing the work later."
+        ),
+        "session_resume": (
+            "This is a new session for existing work. Use the BeeBot State continue "
+            "flow with the previous session handoff below."
+        ),
+        "heartbeat": "This is a heartbeat. Use the heartbeat flow.",
+    }
+    assert "## Session initialization flow" in instructions
+    assert "ordered inputs and workspace" in instructions
+    assert "## Heartbeat flow" in instructions
+    assert "Collect ready results" in instructions
+    assert "cancel this heartbeat's bound timer" in instructions
+
+
 def test_role_prompts_are_an_open_string_registry(beebot_root):
     make_role(
         beebot_root,
@@ -296,10 +325,13 @@ def test_queue_and_locks_live_with_the_agent():
 def test_one_input_is_one_turn():
     agent = as_fake(orchestrator())
     delivery = agent.spin([InputItem("slack:D0B8:1", "hello")])
+    init = agent.role.prompt("session_init")
 
     assert delivery.parked is False
-    assert delivery.text == "hello"
-    assert fake.turns(agent.agent_id) == [[["slack:D0B8:1", "hello"]]]
+    assert delivery.text == f"{init} | hello"
+    assert fake.turns(agent.agent_id) == [
+        [[session_ttl.INIT_SOURCE, init], ["slack:D0B8:1", "hello"]]
+    ]
     assert records.read(agent.agent_id)["turns"] == 1
 
 
@@ -331,7 +363,11 @@ def test_the_source_of_every_item_survives_batching():
         ]
     )
     assert fake.turns(agent.agent_id) == [
-        [["slack:D0B8:1", "first"], ["checkpoint:abc", "second"]]
+        [
+            [session_ttl.INIT_SOURCE, agent.role.prompt("session_init")],
+            ["slack:D0B8:1", "first"],
+            ["checkpoint:abc", "second"],
+        ]
     ]
 
 
@@ -353,7 +389,10 @@ def test_arrivals_during_a_turn_are_parked_and_drained_in_order():
     agent.spin([InputItem("slack:D0B8:first", "the one that got the lock")])
 
     delivered = fake.turns(agent.agent_id)
-    assert delivered[0] == [["slack:D0B8:first", "the one that got the lock"]]
+    assert delivered[0] == [
+        [session_ttl.INIT_SOURCE, agent.role.prompt("session_init")],
+        ["slack:D0B8:first", "the one that got the lock"],
+    ]
     assert delivered[1] == [
         ["slack:D0B8:0", "message 0"],
         ["slack:D0B8:1", "message 1"],
@@ -409,7 +448,9 @@ def test_an_arrival_cannot_slip_between_the_empty_check_and_the_release():
         records._take_queue = real_take
 
     sources = [source for turn in fake.turns(agent.agent_id) for source, _ in turn]
-    assert sources == ["slack:D0B8:1", "late"], "the late arrival was stranded"
+    assert sources == [session_ttl.INIT_SOURCE, "slack:D0B8:1", "late"], (
+        "the late arrival was stranded"
+    )
 
 
 def test_a_closed_agent_refuses_to_spin():

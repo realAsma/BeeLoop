@@ -1,5 +1,14 @@
 cwd = "workspaces/orchestrator"
 
 [session_ttl]
-idle = "4h"
+idle = "1h"
 max_age = "24h"
+
+[heartbeat]
+every = "4h"
+
+[prompts]
+session_init = "This is session initialization. Use the session initialization flow."
+session_expire = "This session is expiring. Use the BeeBot State save flow and return a concise handoff hint for continuing the work later."
+session_resume = "This is a new session for existing work. Use the BeeBot State continue flow with the previous session handoff below."
+heartbeat = "This is a heartbeat. Use the heartbeat flow."
