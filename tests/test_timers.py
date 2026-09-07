@@ -8,6 +8,7 @@ from dataclasses import asdict
 
 import pytest
 
+import beebot.agents.agent as agent_module
 from beebot import agents as ag
 from beebot import timers
 from beebot.agents import records, session_ttl
@@ -162,6 +163,7 @@ def test_heartbeat_requires_exactly_one_positive_every(beebot_root, heartbeat):
 
 def test_identical_heartbeat_and_expiry_prompts_keep_their_distinct_behaviors(
     beebot_root,
+    monkeypatch,
 ):
     make_role(
         beebot_root,
@@ -178,6 +180,8 @@ def test_identical_heartbeat_and_expiry_prompts_keep_their_distinct_behaviors(
     agent = ag.create("heartbeat-ttl")
     scheduled = agent_timers.list_wakes(agent.agent_id)
     heartbeat = next(timer for timer in scheduled if timer.every_seconds is not None)
+    expiry = next(timer for timer in scheduled if timer.every_seconds is None)
+    monkeypatch.setattr(agent_module, "now", lambda: expiry.due_at)
 
     agent.spin(
         [

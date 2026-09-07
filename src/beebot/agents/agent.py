@@ -84,6 +84,7 @@ class Agent:
             "session_id": backends.get(role.backend).open(),
             "status": PREPARED,
             "session_since": stamp,
+            "session_last_turn": None,
             "session_turns": 0,
             "created": stamp,
             "last_turn": None,
@@ -161,16 +162,24 @@ class Agent:
                     return delivery
 
     def _process(self, batch: Sequence[InputItem]) -> Delivery:
+        policy = self.ttl_policy
         expiry = (
             [item for item in batch if session_ttl.is_expiry_input(item)]
-            if self.ttl_policy is not None
+            if policy is not None
             else []
         )
         ordinary = [item for item in batch if item not in expiry]
         delivery = Delivery(text="")
 
         if expiry and self.status != DORMANT:
-            delivery = self._expire_session(expiry[0])
+            if session_ttl.is_due(self.record, policy, now()):
+                delivery = self._expire_session(expiry[0])
+            else:
+                def rearm(record: dict[str, Any]) -> None:
+                    session_ttl.rearm(record, policy, expiry[0].content)
+
+                self.record = records.modify(self.agent_id, self.SCHEMA, rearm)
+                delivery = Delivery(text="session TTL deferred; recent activity")
         if ordinary:
             delivery = (
                 self._wake_session(ordinary)
@@ -205,6 +214,7 @@ class Agent:
             record["session_turns"] += 1
             record["cost_usd"] += delivery.cost_usd or 0.0
             if move_ttl:
+                record["session_last_turn"] = stamp
                 session_ttl.move(record, self.ttl_policy)
 
         self.record = records.modify(self.agent_id, self.SCHEMA, change)
@@ -231,7 +241,12 @@ class Agent:
             finally:
                 def sleep(record: dict[str, Any]) -> None:
                     record.update(
-                        {"status": DORMANT, "session_id": None, "session_since": None}
+                        {
+                            "status": DORMANT,
+                            "session_id": None,
+                            "session_since": None,
+                            "session_last_turn": None,
+                        }
                     )
                     session_ttl.remove(record)
 
@@ -252,6 +267,7 @@ class Agent:
                     "session_id": session_id,
                     "status": PREPARED,
                     "session_since": stamp,
+                    "session_last_turn": None,
                     "session_turns": 0,
                 }
             )

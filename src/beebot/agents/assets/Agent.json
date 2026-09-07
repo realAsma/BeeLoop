@@ -14,6 +14,7 @@
     "session_id",
     "status",
     "session_since",
+    "session_last_turn",
     "session_turns",
     "created",
     "last_turn",
@@ -84,6 +85,13 @@
         {"type": "null"}
       ],
       "description": "When the current session began. Reset when a dormant agent wakes and null while it has no backend session."
+    },
+    "session_last_turn": {
+      "oneOf": [
+        {"$ref": "#/$defs/timestamp"},
+        {"type": "null"}
+      ],
+      "description": "The last successful non-TTL model call in the current session. Null before its first call and while dormant."
     },
     "session_turns": {
       "type": "integer",

@@ -104,18 +104,23 @@ def remove(record: dict[str, Any]) -> None:
 
 def deadline(record: Mapping[str, Any], policy: Policy) -> str:
     since = timers.parse_timestamp(record["session_since"])
-    last_turn = record.get("last_turn")
-    idle_base = since
-    if last_turn:
-        candidate = timers.parse_timestamp(last_turn)
-        if candidate >= since:
-            idle_base = candidate
+    last_turn = record.get("session_last_turn")
+    idle_base = timers.parse_timestamp(last_turn) if last_turn else since
     choices: list[dt.datetime] = []
     if policy.idle_seconds is not None:
         choices.append(idle_base + dt.timedelta(seconds=policy.idle_seconds))
     if policy.max_age_seconds is not None:
         choices.append(since + dt.timedelta(seconds=policy.max_age_seconds))
     return timers.timestamp(min(choices))
+
+
+def is_due(record: Mapping[str, Any], policy: Policy, current: str) -> bool:
+    return deadline(record, policy) <= current
+
+
+def rearm(record: dict[str, Any], policy: Policy, prompt: str) -> None:
+    if not any(is_expiry_timer(item) for item in _stored(record)):
+        arm(record, policy, prompt)
 
 
 def is_expiry_input(item: InputItem) -> bool:

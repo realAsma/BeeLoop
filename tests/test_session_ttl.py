@@ -24,6 +24,12 @@ def ttl_timer(agent):
     )
 
 
+def reach_ttl(monkeypatch, agent):
+    due_at = ttl_timer(agent).due_at
+    monkeypatch.setattr(agent_module, "now", lambda: due_at)
+    return timers.parse_timestamp(due_at)
+
+
 def test_orchestrator_starts_with_its_role_lifecycle_timers():
     agent = orchestrator()
 
@@ -109,7 +115,7 @@ def test_ttl_requires_the_typed_timer_source():
     )
 
 
-def test_custom_expiry_and_resume_prompts_are_used(beebot_root):
+def test_custom_expiry_and_resume_prompts_are_used(beebot_root, monkeypatch):
     make_role(
         beebot_root,
         "custom-lifecycle",
@@ -126,6 +132,7 @@ def test_custom_expiry_and_resume_prompts_are_used(beebot_root):
         "message": "custom expiry",
         "_source": session_ttl.EXPIRY_SOURCE,
     }
+    reach_ttl(monkeypatch, agent)
     agent.spin(
         [
             InputItem(f"{session_ttl.EXPIRY_SOURCE}:ttl", "custom expiry"),
@@ -171,6 +178,28 @@ def test_successful_activity_moves_idle_expiry_but_preserves_maximum(monkeypatch
 
     scheduled = ttl_timer(agent)
     assert scheduled.due_at == timers.timestamp(since + dt.timedelta(hours=2))
+    assert agent.record["session_last_turn"] == timers.timestamp(one_hour_later)
+
+
+def test_expiry_queued_during_a_turn_is_rearmed_from_that_turn(monkeypatch):
+    agent = as_fake(orchestrator())
+    agent.spin([InputItem("user", "start work")])
+    old_session = agent.session_id
+    scheduled = ttl_timer(agent)
+    due = reach_ttl(monkeypatch, agent)
+    envelope = agent_timers.poll(due)
+    assert envelope is not None
+
+    agent.spin([InputItem("user", "finished at the old deadline")])
+    result = dispatch(envelope)
+
+    assert "session TTL deferred; recent activity" in result
+    assert agent.session_id == old_session
+    assert agent.status == "active"
+    assert fake.turns(agent.agent_id)[-1] == [
+        ["user", "finished at the old deadline"]
+    ]
+    assert ttl_timer(agent).due_at == timers.timestamp(due + dt.timedelta(hours=1))
 
 
 def test_maximum_age_caps_idle_rescheduling(monkeypatch):
@@ -200,9 +229,10 @@ def test_cancelling_ttl_prevents_an_ordinary_turn_from_recreating_it():
     assert agent_timers.list_wakes(agent.agent_id) == [heartbeat]
 
 
-def test_ttl_saves_alone_then_restores_before_the_waiting_input():
+def test_ttl_saves_alone_then_restores_before_the_waiting_input(monkeypatch):
     agent = as_fake(orchestrator())
     old_session = agent.session_id
+    reach_ttl(monkeypatch, agent)
 
     expired = agent.spin(
         [
@@ -227,9 +257,10 @@ def test_ttl_saves_alone_then_restores_before_the_waiting_input():
     assert not session_ttl.handoff_path(agent.agent_id).exists()
 
 
-def test_ttl_without_waiting_input_leaves_the_agent_dormant_until_woken():
+def test_ttl_without_waiting_input_leaves_the_agent_dormant_until_woken(monkeypatch):
     agent = as_fake(orchestrator())
     agent_id = agent.agent_id
+    reach_ttl(monkeypatch, agent)
 
     expired = agent.spin(
         [
@@ -244,6 +275,7 @@ def test_ttl_without_waiting_input_leaves_the_agent_dormant_until_woken():
     assert record["status"] == records.DORMANT
     assert record["session_id"] is None
     assert record["session_since"] is None
+    assert record["session_last_turn"] is None
     assert session_ttl.handoff_path(agent_id).read_text("utf-8")
 
     restored = ag.restore(agent_id)
@@ -255,7 +287,7 @@ def test_ttl_without_waiting_input_leaves_the_agent_dormant_until_woken():
     assert not session_ttl.handoff_path(agent_id).exists()
 
 
-def test_the_existing_timer_adapter_drives_session_expiry():
+def test_the_existing_timer_adapter_drives_session_expiry(monkeypatch):
     agent = as_fake(orchestrator())
     scheduled = ttl_timer(agent)
     heartbeat = next(
@@ -263,7 +295,7 @@ def test_the_existing_timer_adapter_drives_session_expiry():
         for timer in agent_timers.list_wakes(agent.agent_id)
         if timer.timer_id != scheduled.timer_id
     )
-    envelope = agent_timers.poll(timers.parse_timestamp(scheduled.due_at))
+    envelope = agent_timers.poll(reach_ttl(monkeypatch, agent))
 
     assert envelope is not None
     assert envelope.source == f"{session_ttl.EXPIRY_SOURCE}:{scheduled.timer_id}"
@@ -273,7 +305,9 @@ def test_the_existing_timer_adapter_drives_session_expiry():
     assert agent_timers.list_wakes(agent.agent_id) == [heartbeat]
 
 
-def test_an_armed_ttl_keeps_its_identity_after_a_role_prompt_edit(beebot_root):
+def test_an_armed_ttl_keeps_its_identity_after_a_role_prompt_edit(
+    beebot_root, monkeypatch
+):
     agent = as_fake(orchestrator())
     scheduled = ttl_timer(agent)
     role_config = beebot_root / "configs" / "roles" / "orchestrator" / "role.toml"
@@ -282,7 +316,7 @@ def test_an_armed_ttl_keeps_its_identity_after_a_role_prompt_edit(beebot_root):
         encoding="utf-8",
     )
 
-    envelope = agent_timers.poll(timers.parse_timestamp(scheduled.due_at))
+    envelope = agent_timers.poll(reach_ttl(monkeypatch, agent))
     assert envelope is not None
     dispatch(envelope)
 
@@ -291,6 +325,7 @@ def test_an_armed_ttl_keeps_its_identity_after_a_role_prompt_edit(beebot_root):
 
 def test_failed_ttl_save_still_detaches_with_a_fallback_handoff(monkeypatch):
     agent = as_fake(orchestrator())
+    reach_ttl(monkeypatch, agent)
     attempts = 0
     deliver = agent.backend.deliver
 
