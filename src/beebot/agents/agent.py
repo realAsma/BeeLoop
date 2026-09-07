@@ -91,7 +91,17 @@ class Agent:
             "cost_usd": 0.0,
             **extra,
         }
-        session_ttl.arm(record, role.session_ttl)
+        expiry_prompt = role.prompt("session_expire", session_ttl.EXPIRY_MESSAGE)
+        session_ttl.arm(record, role.session_ttl, expiry_prompt)
+        heartbeat_prompt = role.prompt("heartbeat")
+        if heartbeat_prompt is not None and role.heartbeat is not None:
+            from . import timers as agent_timers
+
+            agent_timers.arm_recurring(
+                record,
+                message=heartbeat_prompt,
+                every=role.heartbeat,
+            )
         directory = agent_path(agent_id)
         directory.mkdir(parents=True)
         role_config = role.directory / "role.toml"
@@ -100,7 +110,9 @@ class Agent:
             role_config.read_text("utf-8") if role_config.exists() else "",
         )
         write(record, cls.SCHEMA)
-        if role.session_ttl is not None:
+        if (role.session_ttl is not None and expiry_prompt is not None) or (
+            heartbeat_prompt is not None and role.heartbeat is not None
+        ):
             from . import timers as agent_timers
 
             agent_timers.install_adapter()
@@ -149,11 +161,12 @@ class Agent:
                     return delivery
 
     def _process(self, batch: Sequence[InputItem]) -> Delivery:
-        if self.ttl_policy is None:
-            return self._turn(batch)
-
-        expiry = [item for item in batch if session_ttl.is_expiry_input(item)]
-        ordinary = [item for item in batch if not session_ttl.is_expiry_input(item)]
+        expiry = (
+            [item for item in batch if session_ttl.is_expiry_input(item)]
+            if self.ttl_policy is not None
+            else []
+        )
+        ordinary = [item for item in batch if item not in expiry]
         delivery = Delivery(text="")
 
         if expiry and self.status != DORMANT:
@@ -162,9 +175,15 @@ class Agent:
             delivery = (
                 self._wake_session(ordinary)
                 if self.status == DORMANT
-                else self._turn(ordinary)
+                else self._turn(self._with_session_init(ordinary))
             )
         return delivery
+
+    def _with_session_init(self, batch: Sequence[InputItem]) -> Sequence[InputItem]:
+        prompt = self.role.prompt("session_init")
+        if self.record["turns"] or prompt is None:
+            return batch
+        return [session_ttl.init_input(prompt), *batch]
 
     def _turn(self, batch: Sequence[InputItem]) -> Delivery:
         try:
@@ -233,16 +252,32 @@ class Agent:
                     "session_turns": 0,
                 }
             )
-            session_ttl.arm(record, self.ttl_policy)
+            session_ttl.arm(
+                record,
+                self.ttl_policy,
+                self.role.prompt("session_expire", session_ttl.EXPIRY_MESSAGE),
+            )
 
         self.record = records.modify(self.agent_id, self.SCHEMA, wake)
-        if self.ttl_policy is not None:
+        if self.ttl_policy is not None and self.role.prompt(
+            "session_expire", session_ttl.EXPIRY_MESSAGE
+        ) is not None:
             from . import timers as agent_timers
 
             agent_timers.install_adapter()
 
         handoff = session_ttl.read_handoff(self.agent_id)
-        batch = [session_ttl.restore_input(handoff), *inputs] if handoff else list(inputs)
+        batch = (
+            [
+                session_ttl.restore_input(
+                    handoff,
+                    self.role.prompt("session_resume", session_ttl.RESUME_MESSAGE),
+                ),
+                *inputs,
+            ]
+            if handoff
+            else list(inputs)
+        )
         delivery = self._turn(batch)
         if handoff:
             session_ttl.clear_handoff(self.agent_id)

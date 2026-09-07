@@ -53,6 +53,16 @@ def create_wake(
     return timer
 
 
+def arm_recurring(record: dict[str, Any], *, message: str, every: str) -> None:
+    timer = timers.create(
+        records.new_agent_id(),
+        {"message": message},
+        every=every,
+    )
+    stored = _load_timers(record)
+    record["timers"] = [asdict(item) for item in timers.ordered([*stored, timer])]
+
+
 def list_wakes(agent_id: str) -> list[timers.Timer]:
     return timers.ordered(_load_timers(records.read(agent_id)))
 
@@ -83,7 +93,7 @@ def poll(current: dt.datetime | None = None) -> Envelope | None:
             return Envelope(
                 role=None,
                 agent_id=agent_id,
-                source=f"timer:{timer.timer_id}",
+                source=f"{timer.payload.get('_source', 'timer')}:{timer.timer_id}",
                 msg=str(timer.payload["message"]),
             )
     return None

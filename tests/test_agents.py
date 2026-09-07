@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from beebot import agents as ag
-from beebot.agents import records, roles
+from beebot.agents import records, roles, session_ttl
 from beebot.agents.backends import InputItem, fake
 from tests.conftest import as_fake, make_role, orchestrator, poke, worker
 
@@ -110,6 +110,33 @@ def test_a_broken_role_config_names_the_file_instead_of_leaking_a_parse_error(be
 
     with pytest.raises(ag.UnknownRole, match="role.toml is broken"):
         ag.load_role("worker")
+
+
+def test_role_prompts_are_an_open_string_registry(beebot_root):
+    make_role(
+        beebot_root,
+        "prompted",
+        "[prompts]\n"
+        'session_init = "  keep this spacing  "\n'
+        'custom_hook = "custom"\n'
+        'disabled = "   "\n',
+    )
+
+    role = ag.load_role("prompted")
+
+    assert role.prompt("session_init") == "  keep this spacing  "
+    assert role.prompt("custom_hook") == "custom"
+    assert role.prompt("disabled", "fallback") is None
+    assert role.prompt("missing", "fallback") == "fallback"
+    assert role.prompt("missing") is None
+
+
+@pytest.mark.parametrize("config", ['prompts = "no"\n', "[prompts]\nbad = 1\n"])
+def test_role_prompts_reject_non_tables_and_non_strings(beebot_root, config):
+    make_role(beebot_root, "broken-prompts", config)
+
+    with pytest.raises(ag.UnknownRole, match="prompts"):
+        ag.load_role("broken-prompts")
 
 
 # --------------------------------------------------------------- the seeding
@@ -274,6 +301,25 @@ def test_one_input_is_one_turn():
     assert delivery.text == "hello"
     assert fake.turns(agent.agent_id) == [[["slack:D0B8:1", "hello"]]]
     assert records.read(agent.agent_id)["turns"] == 1
+
+
+def test_session_init_is_a_separate_input_on_only_the_first_turn(beebot_root):
+    make_role(
+        beebot_root,
+        "initialized",
+        'backend = "fake"\ncwd = "workspaces/initialized"\n'
+        "[prompts]\n"
+        'session_init = "initialize"\n',
+    )
+    agent = ag.create("initialized")
+
+    agent.spin([InputItem("user", "first")])
+    agent.spin([InputItem("user", "second")])
+
+    assert fake.turns(agent.agent_id) == [
+        [[session_ttl.INIT_SOURCE, "initialize"], ["user", "first"]],
+        [["user", "second"]],
+    ]
 
 
 def test_the_source_of_every_item_survives_batching():

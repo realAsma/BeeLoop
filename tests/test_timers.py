@@ -8,10 +8,13 @@ from dataclasses import asdict
 
 import pytest
 
+from beebot import agents as ag
 from beebot import timers
-from beebot.agents import records
+from beebot.agents import records, session_ttl
 from beebot.agents import timers as agent_timers
-from tests.conftest import as_fake, orchestrator, worker
+from beebot.agents.backends import InputItem, fake
+from beebot.dispatch.dispatch import dispatch
+from tests.conftest import as_fake, make_role, orchestrator, worker
 
 
 def at(hour: int, minute: int = 0) -> dt.datetime:
@@ -97,6 +100,109 @@ def test_legacy_record_has_no_timer_field_until_its_first_timer(beebot_root):
     adapter = beebot_root / "inputs.d" / agent_timers.ADAPTER_NAME
     assert adapter.stat().st_mode & 0o111
     assert "beebot.agents.timers" in adapter.read_text("utf-8")
+
+
+def test_role_heartbeat_arms_an_indefinite_recurring_timer(beebot_root):
+    make_role(
+        beebot_root,
+        "heartbeat",
+        'backend = "fake"\ncwd = "workspaces/heartbeat"\n'
+        "[heartbeat]\n"
+        'every = "2h"\n'
+        "[prompts]\n"
+        'heartbeat = "check for work"\n',
+    )
+
+    agent = ag.create("heartbeat")
+
+    [scheduled] = agent_timers.list_wakes(agent.agent_id)
+    assert scheduled.payload == {"message": "check for work"}
+    assert scheduled.every_seconds == 7200
+    assert scheduled.until is None
+
+    assert agent_timers.cancel_wake(agent.agent_id, scheduled.timer_id)
+    agent.spin([InputItem("user", "ordinary work")])
+    assert agent_timers.list_wakes(agent.agent_id) == []
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        "[heartbeat]\nevery = \"1h\"\n",
+        "[prompts]\nheartbeat = \"check\"\n",
+        "[heartbeat]\nevery = \"1h\"\n[prompts]\nheartbeat = \"  \"\n",
+    ],
+)
+def test_heartbeat_needs_both_schedule_and_prompt(beebot_root, config):
+    make_role(
+        beebot_root,
+        "inactive-heartbeat",
+        'backend = "fake"\ncwd = "workspaces/inactive"\n' + config,
+    )
+
+    agent = ag.create("inactive-heartbeat")
+
+    assert agent_timers.list_wakes(agent.agent_id) == []
+
+
+@pytest.mark.parametrize(
+    "heartbeat",
+    [
+        "[heartbeat]\n",
+        "[heartbeat]\nevery = \"0h\"\n",
+        "[heartbeat]\nevery = \"1h\"\nextra = \"no\"\n",
+    ],
+)
+def test_heartbeat_requires_exactly_one_positive_every(beebot_root, heartbeat):
+    make_role(beebot_root, "broken-heartbeat", heartbeat)
+
+    with pytest.raises(ag.UnknownRole, match="heartbeat|positive integer"):
+        ag.load_role("broken-heartbeat")
+
+
+def test_identical_heartbeat_and_expiry_prompts_keep_their_distinct_behaviors(
+    beebot_root,
+):
+    make_role(
+        beebot_root,
+        "heartbeat-ttl",
+        'backend = "fake"\ncwd = "workspaces/heartbeat-ttl"\n'
+        "[session_ttl]\n"
+        'idle = "4h"\n'
+        "[heartbeat]\n"
+        'every = "1h"\n'
+        "[prompts]\n"
+        'heartbeat = "check for work"\n'
+        'session_expire = "check for work"\n',
+    )
+    agent = ag.create("heartbeat-ttl")
+    scheduled = agent_timers.list_wakes(agent.agent_id)
+    heartbeat = next(timer for timer in scheduled if timer.every_seconds is not None)
+
+    agent.spin(
+        [
+            InputItem(
+                f"{session_ttl.EXPIRY_SOURCE}:ttl", "check for work"
+            )
+        ]
+    )
+    assert agent.status == records.DORMANT
+    assert [timer.timer_id for timer in agent_timers.list_wakes(agent.agent_id)] == [
+        heartbeat.timer_id
+    ]
+
+    envelope = agent_timers.poll(timers.parse_timestamp(heartbeat.due_at))
+    assert envelope is not None
+    dispatch(envelope)
+
+    turns = fake.turns(agent.agent_id)
+    assert turns[-1][0][0] == session_ttl.RESTORE_SOURCE
+    assert turns[-1][1] == [f"timer:{heartbeat.timer_id}", "check for work"]
+    assert records.read(agent.agent_id)["status"] == "active"
+    assert any(
+        timer.timer_id == heartbeat.timer_id
+        for timer in agent_timers.list_wakes(agent.agent_id)
+    )
 
 
 def test_agent_timer_crud_is_bound_to_its_owner():

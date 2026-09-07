@@ -17,7 +17,14 @@ EXPIRY_MESSAGE = (
     "The TTL for this session has expired. Save the current work to BeeBot "
     "State, then return the saved work name and a concise continuation handoff."
 )
+RESUME_MESSAGE = (
+    "Restore the referenced BeeLoop State first, then process the remaining "
+    "inputs in order."
+)
+INIT_SOURCE = "session-init"
 RESTORE_SOURCE = "session-restore"
+EXPIRY_SOURCE = "session-ttl"
+_TIMER_SOURCE_FIELD = "_source"
 
 
 class PolicyError(ValueError):
@@ -63,15 +70,15 @@ def load_policy(agent_id: str) -> Policy | None:
         raise records.AgentError(f"the agent config at {path} is broken: {exc}") from exc
 
 
-def arm(record: dict[str, Any], policy: Policy | None) -> None:
-    if policy is None:
+def arm(record: dict[str, Any], policy: Policy | None, prompt: str | None) -> None:
+    if policy is None or prompt is None:
         return
     scheduled = _stored(record)
     scheduled.append(
         timers.Timer(
             timer_id=records.new_agent_id(),
             due_at=deadline(record, policy),
-            payload={"message": EXPIRY_MESSAGE},
+            payload={"message": prompt, _TIMER_SOURCE_FIELD: EXPIRY_SOURCE},
         )
     )
     record["timers"] = [asdict(item) for item in timers.ordered(scheduled)]
@@ -112,11 +119,11 @@ def deadline(record: Mapping[str, Any], policy: Policy) -> str:
 
 
 def is_expiry_input(item: InputItem) -> bool:
-    return item.content == EXPIRY_MESSAGE
+    return item.source.startswith(f"{EXPIRY_SOURCE}:")
 
 
 def is_expiry_timer(timer: timers.Timer) -> bool:
-    return timer.payload.get("message") == EXPIRY_MESSAGE
+    return timer.payload.get(_TIMER_SOURCE_FIELD) == EXPIRY_SOURCE
 
 
 def write_handoff(agent_id: str, text: str) -> None:
@@ -137,11 +144,15 @@ def clear_handoff(agent_id: str) -> None:
         path.unlink()
 
 
-def restore_input(handoff: str) -> InputItem:
+def init_input(prompt: str) -> InputItem:
+    return InputItem(INIT_SOURCE, prompt)
+
+
+def restore_input(handoff: str, prompt: str | None) -> InputItem:
+    handoff_text = f"Previous session handoff:\n{handoff}"
     return InputItem(
         RESTORE_SOURCE,
-        "Restore the referenced BeeLoop State first, then process the remaining "
-        f"inputs in order.\n\nPrevious session handoff:\n{handoff}",
+        f"{prompt}\n\n{handoff_text}" if prompt else handoff_text,
     )
 
 
