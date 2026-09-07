@@ -242,6 +242,9 @@ class Agent:
     def _wake_session(self, inputs: Sequence[InputItem]) -> Delivery:
         stamp = now()
         session_id = self.backend.open()
+        expiry_prompt = self.role.prompt(
+            "session_expire", session_ttl.EXPIRY_MESSAGE
+        )
 
         def wake(record: dict[str, Any]) -> None:
             record.update(
@@ -255,13 +258,11 @@ class Agent:
             session_ttl.arm(
                 record,
                 self.ttl_policy,
-                self.role.prompt("session_expire", session_ttl.EXPIRY_MESSAGE),
+                expiry_prompt,
             )
 
         self.record = records.modify(self.agent_id, self.SCHEMA, wake)
-        if self.ttl_policy is not None and self.role.prompt(
-            "session_expire", session_ttl.EXPIRY_MESSAGE
-        ) is not None:
+        if self.ttl_policy is not None and expiry_prompt is not None:
             from . import timers as agent_timers
 
             agent_timers.install_adapter()

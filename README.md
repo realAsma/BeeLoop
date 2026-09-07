@@ -89,32 +89,6 @@ idle = "4h"
 max_age = "24h"
 ```
 
-Roles may also override named lifecycle prompts in the same TOML file:
-
-```toml
-[prompts]
-session_init = "Review the role instructions before handling the first input."
-session_expire = "Save current work and return a continuation handoff."
-session_resume = "Restore the saved work before handling the pending input."
-heartbeat = "Check for new work."
-
-[heartbeat]
-every = "1h"
-```
-
-`[prompts]` is an open registry of string values, so custom role code may add
-its own names. Missing prompts use the hook's default; blank prompts disable a
-hook. Session initialization and heartbeat have no default. Session expiry and
-resume retain the behavior described below unless overridden. Prompt overrides
-are read from the live role when an agent is restored. Already-armed timers keep
-their original message, cadence, and timer type across role edits.
-
-`session_init`, when set, is a separate input before the first ordinary turn of
-the original session. A heartbeat is active only when both `prompts.heartbeat`
-and `[heartbeat].every` are set. It is an indefinite recurring ordinary timer,
-so it refreshes idle TTL and can wake a dormant agent with its cached handoff.
-Cancelling it keeps it cancelled.
-
 TTL uses an ordinary visible, cancellable one-shot timer. When it fires, the old
 session receives one final turn asking it to save to BeeLoop State and return a
 continuation handoff. BeeBot caches that response in the agent directory and
