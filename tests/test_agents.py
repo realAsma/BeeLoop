@@ -7,6 +7,7 @@ import json
 import re
 import threading
 import time
+import tomllib
 import uuid
 from pathlib import Path
 
@@ -15,7 +16,7 @@ import pytest
 from beebot import agents as ag
 from beebot.agents import records, roles, session_ttl
 from beebot.agents.backends import InputItem, fake
-from tests.conftest import as_fake, make_role, orchestrator, poke, worker
+from tests.conftest import SOURCE, as_fake, make_role, orchestrator, poke, worker
 
 
 # ---------------------------------------------------------------------- filing
@@ -114,7 +115,7 @@ def test_a_broken_role_config_names_the_file_instead_of_leaking_a_parse_error(be
 
 def test_orchestrator_role_defines_its_lifecycle_flows():
     role = ag.load_role("orchestrator")
-    instructions = (role.template / "AGENTS.md").read_text("utf-8")
+    config = tomllib.loads((role.directory / "role.toml").read_text("utf-8"))
 
     assert role.session_ttl == session_ttl.Policy(
         idle_seconds=3600, max_age_seconds=86400
@@ -122,7 +123,7 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
     assert role.heartbeat == "4h"
     assert role.prompts == {
         "session_init": (
-            "This is session initialization. Use the session initialization flow."
+            "This is your first turn. Use the first-turn flow."
         ),
         "session_expire": (
             "This session is expiring. Use the BeeBot State save flow and return "
@@ -134,11 +135,16 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
         ),
         "heartbeat": "This is a heartbeat. Use the heartbeat flow.",
     }
-    assert "## Session initialization flow" in instructions
-    assert "ordered inputs and workspace" in instructions
-    assert "## Heartbeat flow" in instructions
-    assert "Collect ready results" in instructions
-    assert "cancel this heartbeat's bound timer" in instructions
+    assert config["messaging"]["allowed_recipients"]["roles"] == ["*"]
+
+    canonical = role.template / ".agents" / "skills"
+    source_template = SOURCE / "configs" / "roles" / "orchestrator" / "template"
+    for name in ("orchestrator-first-turn", "orchestrator-heartbeat"):
+        assert (canonical / name / "SKILL.md").is_file()
+        claude_link = source_template / ".claude" / "skills" / name
+        canonical_source = source_template / ".agents" / "skills" / name
+        assert claude_link.is_symlink()
+        assert claude_link.resolve() == canonical_source.resolve()
 
 
 def test_role_prompts_are_an_open_string_registry(beebot_root):
@@ -200,6 +206,37 @@ def test_seeding_never_overwrites_a_file_that_is_already_there(beebot_root):
 
     assert second.cwd == first.cwd
     assert (second.cwd / "AGENTS.md").read_text("utf-8") == "edited by hand"
+
+
+def test_seeding_preserves_directory_symlinks(beebot_root):
+    role_dir = make_role(beebot_root, "linked", SEEDED)
+    canonical = role_dir / "template" / ".agents" / "skills" / "logging"
+    canonical.mkdir(parents=True)
+    (canonical / "SKILL.md").write_text("how to log", encoding="utf-8")
+    linked = role_dir / "template" / ".claude" / "skills" / "logging"
+    linked.parent.mkdir(parents=True)
+    linked.symlink_to("../../.agents/skills/logging", target_is_directory=True)
+
+    agent = ag.create("linked")
+
+    seeded = agent.cwd / ".claude" / "skills" / "logging"
+    assert seeded.is_symlink()
+    assert seeded.readlink() == Path("../../.agents/skills/logging")
+    assert seeded.resolve() == (agent.cwd / ".agents" / "skills" / "logging").resolve()
+
+
+def test_seeding_does_not_overwrite_a_broken_destination_symlink(beebot_root):
+    source = beebot_root / "source"
+    destination = beebot_root / "destination"
+    source.mkdir()
+    destination.mkdir()
+    (source / "link").symlink_to("source-target")
+    (destination / "link").symlink_to("missing-target")
+
+    roles.seed(source, destination)
+
+    assert (destination / "link").is_symlink()
+    assert (destination / "link").readlink() == Path("missing-target")
 
 
 def test_the_role_config_never_reaches_a_workspace(beebot_root):
