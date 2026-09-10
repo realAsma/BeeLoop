@@ -18,6 +18,12 @@ For each input:
 - Apply every polling, stdout, envelope, routing, and dependency-ownership rule
   from `inputs.d/README.md` to the runtime implementation.
 
+If an input needs credentials, store them as `KEY=value` entries in
+`$BEEBOT_ROOT/runtime/inputs/<input-name>/secrets.env`. The runtime adapter must
+load its own file and report missing required credentials clearly without
+exposing their values.
+Never include secrets in envelopes, output, logs, state, or committed files.
+
 If the source accepts replies, keep its reply implementation in the same
 runtime input directory. Its interface is input-specific, but it must accept
 the complete source and reply content, validate the source namespace, own
