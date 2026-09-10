@@ -121,7 +121,7 @@ def agent_for(key: Route, creator: AgentCreator = ag.create) -> ag.Agent:
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def reassign(key: Route, owner_agent_id: str, receiver_agent_id: str) -> str:
+def reassign(key: Route, owner_agent_id: str, receiver_agent_id: str) -> None:
     """Atomically reassign a persistent route owned by one agent."""
     if key.ephemeral:
         raise RouteError(f"source {key.source!r} does not have a persistent route")
@@ -130,18 +130,7 @@ def reassign(key: Route, owner_agent_id: str, receiver_agent_id: str) -> str:
     with open(routes_path().with_suffix(".lock"), "a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
-            assignments = [
-                row.get("agent_id") for row in _rows() if _matches(row, key)
-            ]
-            current = assignments[-1] if assignments else None
-            if current == receiver_agent_id:
-                if current == owner_agent_id or (
-                    len(assignments) > 1 and assignments[-2] == owner_agent_id
-                ):
-                    return "already_routed"
-                raise RouteError(
-                    f"source {key.source!r} is routed to another agent"
-                )
+            current = key.resolve()
             if current is None:
                 raise RouteError(f"source {key.source!r} has no route")
             if current != owner_agent_id:
@@ -149,6 +138,5 @@ def reassign(key: Route, owner_agent_id: str, receiver_agent_id: str) -> str:
                     f"source {key.source!r} is routed to another agent"
                 )
             key.new(receiver_agent_id)
-            return "routed"
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)

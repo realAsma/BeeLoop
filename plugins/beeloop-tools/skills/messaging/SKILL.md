@@ -41,7 +41,6 @@ other non-empty value, including `default`, to reuse the latest restorable agent
 for that route.
 
 Use `route_source(source, receiver_agent_id)` to move a persistent input source
-owned by this agent to an allowed existing agent with the same role and cwd.
-Forward the complete input packet before routing its sources. The result is
-`routed` or `already_routed`; the tool cannot create agents or take another
-agent's route.
+owned by this agent to an allowed existing agent with the same role and cwd. A
+successful result identifies the source and receiver. The tool cannot create
+agents or take another agent's route.

@@ -391,22 +391,17 @@ def test_route_source_uses_the_shared_receiver_policy(grant):
 
     assert server.route_source(route.source, receiver.agent_id) == {
         "source": route.source,
-        "status": "routed",
         "receiver_agent_id": receiver.agent_id,
         "receiver_role": receiver.record["role"],
     }
     assert route.resolve() == receiver.agent_id
 
 
-def test_route_source_is_idempotent_and_redirects_subsequent_delivery():
+def test_route_source_redirects_subsequent_delivery():
     sender, receiver, route = routed_pair()
     rules(sender, ids=[receiver.agent_id])
 
-    assert server.route_source(route.source, receiver.agent_id)["status"] == "routed"
-    assert (
-        server.route_source(route.source, receiver.agent_id)["status"]
-        == "already_routed"
-    )
+    server.route_source(route.source, receiver.agent_id)
 
     dsp.dispatch(
         Envelope(
@@ -420,19 +415,6 @@ def test_route_source_is_idempotent_and_redirects_subsequent_delivery():
     )
     assert fake.turns(receiver.agent_id)[-1][-1] == [route.source, "continued"]
     assert fake.turns(sender.agent_id) == []
-
-
-def test_route_source_rejects_same_key_retry_from_an_unrelated_caller():
-    sender, receiver, route = routed_pair()
-    rules(sender, ids=[receiver.agent_id])
-    assert server.route_source(route.source, receiver.agent_id)["status"] == "routed"
-
-    unrelated = orchestrator(instance=sender.record["instance"])
-    bind(unrelated)
-    rules(unrelated, ids=[receiver.agent_id])
-
-    with pytest.raises(server.MessagingError, match="another agent"):
-        server.route_source(route.source, receiver.agent_id)
 
 
 def test_route_source_rejects_ephemeral_unknown_and_other_owned_sources():
@@ -476,18 +458,20 @@ def test_route_source_requires_an_allowed_compatible_existing_receiver():
         )
 
 
-def test_concurrent_route_retries_append_one_reassignment():
+def test_concurrent_route_transfers_have_one_winner():
     sender, receiver, route = routed_pair("slack:contended")
     rules(sender, ids=[receiver.agent_id])
     directory = records.agent_path(sender.agent_id)
     start = threading.Barrier(8)
-    statuses = []
+    results = []
 
     def move():
         start.wait()
-        statuses.append(
-            messaging.route_source(directory, route.source, receiver.agent_id)["status"]
-        )
+        try:
+            messaging.route_source(directory, route.source, receiver.agent_id)
+            results.append("routed")
+        except messaging.MessagingError as exc:
+            results.append(str(exc))
 
     threads = [threading.Thread(target=move) for _ in range(8)]
     for thread in threads:
@@ -495,8 +479,8 @@ def test_concurrent_route_retries_append_one_reassignment():
     for thread in threads:
         thread.join(10)
 
-    assert statuses.count("routed") == 1
-    assert statuses.count("already_routed") == 7
+    assert results.count("routed") == 1
+    assert results.count(f"source {route.source!r} is routed to another agent") == 7
     assert len(records.runtime().joinpath("routes.jsonl").read_text().splitlines()) == 2
 
 

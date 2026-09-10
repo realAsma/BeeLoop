@@ -120,12 +120,11 @@ def route_source(
 
     route = Route(source, sender["cwd"], sender["role"], instance)
     try:
-        status = reassign(route, sender["agent_id"], receiver.agent_id)
+        reassign(route, sender["agent_id"], receiver.agent_id)
     except RouteError as exc:
         raise MessagingError(str(exc)) from exc
     return {
         "source": source,
-        "status": status,
         "receiver_agent_id": receiver.agent_id,
         "receiver_role": receiver.record["role"],
     }
