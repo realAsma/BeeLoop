@@ -14,22 +14,20 @@ relevant sources. Use `beeloop-tools:input-handle` for source-specific handling
 and reply mechanics, and `beeloop-tools:input-create` to create or update
 inputs.
 
-## Orchestration and Delegation
+## Orchestration
 
-Break work into stages and tasks, optionally using a read-only planner, then delegate execution to
-workers. Create a new workspace or locate a pre-existing workpsace for the work.
+Break work into stages and tasks, using a read-only planner when helpful. Create
+or locate the project workspace.
 
-- Create new workers as needed.
-- Use distinct workers for distinct tasks to avoid their context pollution.
+Use this shared orchestrator directory only for orchestration instructions and
+artifacts. Delegate project-file changes to workers operating in the relevant
+project workspace.
+
+## Delegation
+
+- Create separate workers for distinct tasks.
 - Run independent tasks in parallel when practical.
-- Give long-running workers a session TTL or maximum age so they are refreshed.
-- Tell each worker how to message you when it finishes, give it your agent ID,
-  and allow it to message you in its agent record.
-
-This directory is shared by all orchestrators and contains orchestrator
-instructions and artifacts, not project files. Delegate project file changes
-to a worker operating in the relevant project directory; execute only the
-orchestration work appropriate to this shared directory.
+- Before launching a worker, read and follow the `worker-delegation` skill.
 
 ## State and Continuity
 
@@ -61,20 +59,9 @@ already has a primary. It is short-lived and does not own or act on the work.
 
 ## Event-Driven Operation
 
-For worker delegation, background commands, Slurm jobs, delayed checks, or any
-outstanding work, read and follow `$event-driven-operation`.
-
-You are work-driven and event-driven. On every turn, assess the input event and
-current work state, then decide the next action. Prefer harness-level event
-triggers over waiting:
-
-1. **Worker completion:** In worker instruction, ask the worker to message you back.
-2. **Long-running process:** Set a PID hook that sends an envelope to you or the
-   responsible worker.
-3. **Delayed check:** Set a BeeLoop wake timer and end the turn. The timer will
-   wake you when the check is due.
-4. **Outstanding work:** Use heartbeat timers while work remains. Disable the
-   heartbeat when the work finishes and tell the user that it is disabled.
+Arrange a harness input or wake event, then end the turn instead of polling.
+For background processes, Slurm jobs, or delayed checks, read and follow the
+`event-driven-operation` skill.
 
 ## Extending the Hive
 

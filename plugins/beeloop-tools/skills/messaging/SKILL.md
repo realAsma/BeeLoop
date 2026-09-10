@@ -1,15 +1,19 @@
 ---
 name: messaging
-description: Send an asynchronous message to another BeeLoop agent or reply to one.
+description: Create a BeeLoop agent, send it an asynchronous message, or reply to one.
 ---
 
 # BeeLoop messaging
 
-Use `get_agent_id()` when you need your own stable agent ID. Send work with
-`message(receiver, msg)`. The result contains `status`, `receiver_agent_id`, and
-`receiver_role`. A status of `accepted` means the message was handed to the
-background dispatcher, not that the other agent has completed a turn. Use the
-returned agent ID to continue messaging the exact agent resolved from a route.
+Use `get_agent_id()` when you need your own stable agent ID. Create an agent
+without starting a model turn with `create_agent(role, cwd=None)`; it returns
+the new agent's `agent_id`, `role`, and resolved `cwd`.
+
+Send work with `message(receiver, msg)`. The result contains `status`,
+`receiver_agent_id`, and `receiver_role`. A status of `accepted` means the
+message was handed to the background dispatcher, not that the other agent has
+completed a turn. Use the returned agent ID to continue messaging the exact
+agent resolved from a route.
 
 Incoming agent messages have a source such as `agent:<id>`. Reply explicitly by
 calling `message(receiver="<id>", msg="...")`. A reply is a new outbound
@@ -27,10 +31,11 @@ ids = ["0198ff2a-0000-7000-8000-000000000000"]
 ```
 
 The lists are unioned, and `"*"` in either one permits any existing recipient.
-Only an explicit role or `"*"` in `roles` permits creating a new role route.
-Recipients do not maintain an inbound allowlist.
+Only an explicit role or `"*"` in `roles` permits `create_agent` or creation
+through a message route. Recipients do not maintain an inbound allowlist.
 
 A receiver route contains `role` and optional `cwd` and `instance`. Omit
 `instance`, pass it empty, or use the exact lowercase value `fresh` to create a
-new agent. Use any other non-empty value, including `default`, to reuse the
-latest restorable agent for that route.
+new agent through the same authorized creation path as `create_agent`. Use any
+other non-empty value, including `default`, to reuse the latest restorable agent
+for that route.

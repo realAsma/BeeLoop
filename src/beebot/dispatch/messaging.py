@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,21 @@ ROUTE_FIELDS = frozenset({"role", "cwd", "instance"})
 def agent_id(sender_directory: Path) -> str:
     """Return the identity bound to an agent directory."""
     return _identity(sender_directory)["agent_id"]
+
+
+def create_agent(
+    sender_directory: Path,
+    role: str,
+    cwd: str | None = None,
+) -> dict[str, str]:
+    """Authorize and create an agent without dispatching a turn."""
+    allowed = _allowed_recipients(sender_directory / "config.toml")
+    created = _create(allowed, role, cwd=cwd)
+    return {
+        "agent_id": created.agent_id,
+        "role": created.record["role"],
+        "cwd": str(created.cwd),
+    }
 
 
 def send(
@@ -123,7 +139,7 @@ def _resolve(
                 raise MessagingError(
                     f"role {route.role!r} is not allowed to create a message route"
                 )
-            recipient = agent_for(route)
+            recipient = agent_for(route, creator=partial(_create, allowed))
     else:
         raise MessagingError("receiver must be an agent ID or a route object")
 
@@ -133,6 +149,17 @@ def _resolve(
             f"{recipient.record['role']!r} or agent {recipient.agent_id!r}"
         )
     return recipient
+
+
+def _create(
+    allowed: AllowedRecipients,
+    role: str,
+    cwd: str | None = None,
+    **record: Any,
+) -> ag.Agent:
+    if not allowed.allows_role(role):
+        raise MessagingError(f"role {role!r} is not allowed to create an agent")
+    return ag.create(role, cwd=cwd, **record)
 
 
 def _route(receiver: dict[str, Any], sender_id: str) -> Route:

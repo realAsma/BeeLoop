@@ -33,6 +33,12 @@ def get_agent_id() -> str:
 
 
 @mcp.tool()
+def create_agent(role: str, cwd: str | None = None) -> dict[str, str]:
+    """Create an authorized agent without starting its first model turn."""
+    return messaging.create_agent(_agent_directory(), role, cwd)
+
+
+@mcp.tool()
 def message(receiver: str | dict[str, Any], msg: str) -> dict[str, str]:
     """Asynchronously send a message to an agent ID or role route.
 

@@ -106,17 +106,61 @@ def test_the_live_server_exposes_the_bound_messaging_and_timer_tools():
     listed, identity = asyncio.run(inspect_server())
     assert [tool.name for tool in listed.tools] == [
         "get_agent_id",
+        "create_agent",
         "message",
         "timer_create",
         "timer_list",
         "timer_cancel",
     ]
-    tool = listed.tools[1]
+    create = listed.tools[1]
+    assert set(create.inputSchema["properties"]) == {"role", "cwd"}
+    assert set(create.inputSchema["required"]) == {"role"}
+    assert "without starting" in create.description
+    tool = listed.tools[2]
     message = tool.inputSchema
     assert set(message["properties"]) == {"receiver", "msg"}
     assert set(message["required"]) == {"receiver", "msg"}
     assert "fresh" in tool.description
     assert identity.content[0].text == agent.agent_id
+
+
+def test_create_agent_is_authorized_and_does_not_dispatch(beebot_root, monkeypatch):
+    make_role(
+        beebot_root,
+        "target",
+        'backend = "fake"\ncwd = "workspaces/target"\n',
+    )
+    sender = orchestrator()
+    bind(sender)
+    rules(sender, roles=["target"])
+    monkeypatch.setattr(messaging, "_submit", lambda *args: pytest.fail("dispatched"))
+
+    result = server.create_agent("target")
+
+    created = ag.restore(result["agent_id"])
+    assert result == {
+        "agent_id": created.agent_id,
+        "role": "target",
+        "cwd": str((beebot_root / "workspaces" / "target").resolve()),
+    }
+    assert created.record["turns"] == 0
+    assert fake.turns(created.agent_id) == []
+
+
+def test_create_agent_requires_role_creation_permission(beebot_root):
+    make_role(
+        beebot_root,
+        "target",
+        'backend = "fake"\ncwd = "workspaces/target"\n',
+    )
+    sender = orchestrator()
+    bind(sender)
+    rules(sender, ids=["*"])
+
+    with pytest.raises(server.MessagingError, match="not allowed to create"):
+        server.create_agent("target")
+
+    assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
 
 
 def test_the_plugin_definitions_bind_each_tools_stdio_environment():
@@ -454,6 +498,35 @@ def test_named_message_routes_reuse_and_remain_distinct(beebot_root, monkeypatch
     assert recipient_ids[0] == recipient_ids[2]
     assert recipient_ids[1] == recipient_ids[3]
     assert recipient_ids[0] != recipient_ids[1]
+
+
+def test_message_route_uses_the_shared_authorized_creator(beebot_root, monkeypatch):
+    make_role(
+        beebot_root,
+        "target",
+        'backend = "fake"\ncwd = "workspaces/target"\n',
+    )
+    sender = orchestrator()
+    bind(sender)
+    rules(sender, roles=["target"])
+    monkeypatch.setattr(messaging, "_submit", lambda *args: None)
+    original = messaging._create
+    calls = []
+
+    def create(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(messaging, "_create", create)
+
+    server.message({"role": "target", "instance": "named"}, "hello")
+
+    assert len(calls) == 1
+    assert calls[0][0][1:] == ("target",)
+    assert calls[0][1] == {
+        "cwd": str((beebot_root / "workspaces" / "target").resolve()),
+        "instance": "named",
+    }
 
 
 def test_receiver_routes_reject_unknown_fields(monkeypatch):

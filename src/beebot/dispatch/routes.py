@@ -6,7 +6,7 @@ import fcntl
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any, Callable, Iterator, Mapping
 
 from beebot import agents as ag
 from beebot.agents.records import runtime
@@ -93,10 +93,13 @@ def _restored(agent_id: str) -> ag.Agent | None:
         return None
 
 
-def agent_for(key: Route) -> ag.Agent:
+AgentCreator = Callable[..., ag.Agent]
+
+
+def agent_for(key: Route, creator: AgentCreator = ag.create) -> ag.Agent:
     """Resolve or create an agent, serializing the final check and append."""
     if key.ephemeral:
-        return ag.create(key.role, cwd=key.cwd)
+        return creator(key.role, cwd=key.cwd)
     if (agent_id := key.resolve()) and (found := _restored(agent_id)):
         return found
 
@@ -107,7 +110,7 @@ def agent_for(key: Route) -> ag.Agent:
             if (agent_id := key.resolve()) and (found := _restored(agent_id)):
                 return found
             extra = {"instance": key.instance} if key.instance else {}
-            new_agent = ag.create(key.role, cwd=key.cwd, **extra)
+            new_agent = creator(key.role, cwd=key.cwd, **extra)
             key.new(new_agent.agent_id)
             return new_agent
         finally:
