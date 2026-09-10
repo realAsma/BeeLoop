@@ -219,6 +219,8 @@ def test_missing_and_empty_rules_deny_without_starting_dispatch(monkeypatch, emp
     sender, receiver = sender_and_receiver()
     if empty:
         rules(sender)
+    else:
+        (records.agent_path(sender.agent_id) / "config.toml").unlink()
     called = False
 
     def dispatch(*args):

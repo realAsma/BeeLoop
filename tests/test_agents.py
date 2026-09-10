@@ -139,7 +139,14 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
 
     canonical = role.template / ".agents" / "skills"
     source_template = SOURCE / "configs" / "roles" / "orchestrator" / "template"
-    for name in ("orchestrator-first-turn", "orchestrator-heartbeat"):
+    assert "$event-driven-operation" in (source_template / "AGENTS.md").read_text(
+        encoding="utf-8"
+    )
+    for name in (
+        "event-driven-operation",
+        "orchestrator-first-turn",
+        "orchestrator-heartbeat",
+    ):
         assert (canonical / name / "SKILL.md").is_file()
         claude_link = source_template / ".claude" / "skills" / name
         canonical_source = source_template / ".agents" / "skills" / name

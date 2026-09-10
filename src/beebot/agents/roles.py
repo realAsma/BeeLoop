@@ -125,8 +125,13 @@ def seed(source: Path, destination: Path) -> None:
         return
     for item in sorted(source.rglob("*")):
         target = destination / item.relative_to(source)
-        if item.is_dir():
+        if item.is_symlink():
+            if target.exists() or target.is_symlink():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(item.readlink(), target_is_directory=item.is_dir())
+        elif item.is_dir():
             target.mkdir(parents=True, exist_ok=True)
-        elif not target.exists():
+        elif not target.exists() and not target.is_symlink():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(item, target)
