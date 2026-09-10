@@ -37,19 +37,9 @@ diagnose it: PID, owner agent ID, working directory, start time, command label,
 and output or log location. Do not keep a model turn open to poll it.
 
 Use `beeloop-tools:input-create` to create or update one reusable PID-monitor
-input. Its runtime registry must support multiple targets. In one poll, check
-all registered PIDs efficiently and durably append every new terminal
-observation to a pending set. Print nothing when that set is empty. Because
-stdout supports one envelope per poll, persist a fair rotation cursor, emit one
-pending target to its `agent_id`, and advance the cursor without deleting or
-acknowledging the observation. Include the PID, label, terminal state, and log
-location in `msg`; never include raw output or secrets.
-
-Retain un-emitted observations and cycle through all pending targets, including
-unacknowledged ones, so repeated emission of one terminal event cannot starve
-others. The receiving flow must treat duplicates as idempotent and remove a
-target only after reconciling its result. This preserves the input contract when
-an emitted envelope is dropped.
+input with a runtime registry that supports multiple targets. Check all
+registered PIDs efficiently in one poll. A new terminal state is reportable;
+its `msg` includes the PID, label, state, and log location.
 
 ## Slurm jobs
 
@@ -59,14 +49,24 @@ records the SSH host, Slurm job ID, owner agent ID, label, and relevant log
 location. Batch targets by host and query all job IDs for that host together;
 do not open one SSH session per job.
 
-Durably retain every reportable terminal, missing, or repeated query-failure
-observation. Print nothing when none are pending. Use the same persisted fair
-rotation as the PID monitor to emit one envelope per poll to the owning
-`agent_id`; retain un-emitted and unacknowledged observations so no host or job
-can starve. Include the host, job ID, label, state, and log location, but keep
-credentials, SSH options, and raw scheduler output out of envelopes. Remove an
-observation only after the recipient reconciles it. Retain transient query
-failures for later polling without discarding the monitored jobs.
+A terminal, missing, or repeated query-failure state is reportable. Retain
+transient query failures for later polling without discarding monitored jobs.
+The `msg` includes the host, job ID, label, state, and log location, but not
+credentials or SSH options.
+
+## Monitor delivery
+
+Both monitors durably append every new reportable observation to a pending set.
+Print nothing when it is empty. Because stdout supports one envelope per poll,
+persist a fair rotation cursor, emit one pending observation to its `agent_id`,
+and advance the cursor without deleting or acknowledging it. Never include raw
+output or secrets in an envelope.
+
+Retain un-emitted observations and cycle through all pending targets, including
+unacknowledged ones, so repeated emission cannot starve others. The receiving
+flow must reconcile duplicates idempotently and only then remove the
+observation or target. This preserves the input contract when an envelope is
+dropped.
 
 ## Timers and heartbeat
 
