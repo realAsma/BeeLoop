@@ -142,11 +142,15 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
     instructions = (source_template / "AGENTS.md").read_text(encoding="utf-8")
     assert "`event-driven-operation` skill" in instructions
     assert "`worker-delegation` skill" in instructions
+    assert (source_template / ".gitignore").read_text(encoding="utf-8") == (
+        "/secrets.env\n/workspaces/\n"
+    )
     for name in (
         "event-driven-operation",
         "orchestrator-first-turn",
         "orchestrator-heartbeat",
         "worker-delegation",
+        "workspace-management",
     ):
         assert (canonical / name / "SKILL.md").is_file()
         claude_link = source_template / ".claude" / "skills" / name
