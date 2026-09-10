@@ -135,7 +135,7 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
         ),
         "heartbeat": "This is a heartbeat. Use the heartbeat flow.",
     }
-    assert config["messaging"]["allowed_recipients"]["roles"] == ["*"]
+    assert config["allowed_receivers"]["roles"] == ["*"]
 
     canonical = role.template / ".agents" / "skills"
     source_template = SOURCE / "configs" / "roles" / "orchestrator" / "template"

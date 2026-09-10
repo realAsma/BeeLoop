@@ -22,7 +22,7 @@ MessagingError = messaging.MessagingError
 AGENT_DIRECTORY: Path | None = None
 mcp = FastMCP(
     "beeloop-tools",
-    instructions="Bound asynchronous messaging and wake timers for BeeLoop agents.",
+    instructions="Bound messaging, source routing, and wake timers for BeeLoop agents.",
 )
 
 
@@ -49,6 +49,12 @@ def message(receiver: str | dict[str, Any], msg: str) -> dict[str, str]:
     dispatch, not model completion.
     """
     return messaging.send(_agent_directory(), receiver, msg)
+
+
+@mcp.tool()
+def route_source(source: str, receiver_agent_id: str) -> dict[str, str]:
+    """Route one persistent input source owned by this agent to an existing agent."""
+    return messaging.route_source(_agent_directory(), source, receiver_agent_id)
 
 
 @mcp.tool()

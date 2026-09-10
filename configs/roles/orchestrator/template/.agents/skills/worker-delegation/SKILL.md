@@ -7,7 +7,7 @@ description: Create and launch BeeLoop workers with authorized result callbacks.
 
 - Get your agent ID with `get_agent_id()`.
 - Create the worker with `create_agent(role="worker", cwd=...)`.
-- Merge your agent ID into `messaging.allowed_recipients.ids` in the worker's
+- Merge your agent ID into `allowed_receivers.ids` in the worker's
   snapshotted `$BEEBOT_ROOT/runtime/agents/<worker-id>/config.toml`; preserve all
   other TOML content and validate the exact file.
 - Message that exact worker ID with the task and ask it to report its result or

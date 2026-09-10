@@ -1,6 +1,6 @@
 cwd = "workspaces/orchestrator"
 
-[messaging.allowed_recipients]
+[allowed_receivers]
 roles = ["*"]
 
 [session_ttl]

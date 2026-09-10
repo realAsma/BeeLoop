@@ -1,7 +1,7 @@
 {
   "name": "beeloop-tools",
   "version": "1.0.0",
-  "description": "Asynchronous messaging and wake timers for BeeLoop agents.",
+  "description": "Asynchronous messaging, source routing, and wake timers for BeeLoop agents.",
   "author": {
     "name": "BeeLoop"
   },
@@ -17,11 +17,11 @@
   },
   "interface": {
     "displayName": "BeeLoop Tools",
-    "shortDescription": "Message agents and schedule wake timers.",
-    "longDescription": "Send asynchronous messages between explicitly authorized BeeLoop agents and schedule bound wake timers.",
+    "shortDescription": "Message agents, route sources, and schedule wake timers.",
+    "longDescription": "Send asynchronous messages, route owned sources between explicitly authorized BeeLoop agents, and schedule bound wake timers.",
     "developerName": "BeeLoop",
     "category": "Productivity",
     "capabilities": ["Write"],
-    "defaultPrompt": ["Send a message or schedule a wake timer."]
+    "defaultPrompt": ["Send a message, route a source, or schedule a wake timer."]
   }
 }

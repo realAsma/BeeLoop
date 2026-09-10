@@ -15,7 +15,7 @@ from beebot import agents as ag
 from beebot.agents.records import root
 from beebot.agents.roles import load_role, workspace
 from beebot.dispatch.envelope import Envelope, serialize
-from beebot.dispatch.routes import Route, agent_for
+from beebot.dispatch.routes import Route, RouteError, agent_for, reassign
 
 
 class MessagingError(RuntimeError):
@@ -23,7 +23,7 @@ class MessagingError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class AllowedRecipients:
+class AllowedReceivers:
     roles: frozenset[str]
     ids: frozenset[str]
 
@@ -53,7 +53,7 @@ def create_agent(
     cwd: str | None = None,
 ) -> dict[str, str]:
     """Authorize and create an agent without dispatching a turn."""
-    allowed = _allowed_recipients(sender_directory / "config.toml")
+    allowed = _allowed_receivers(sender_directory / "config.toml")
     created = _create(allowed, role, cwd=cwd)
     return {
         "agent_id": created.agent_id,
@@ -72,7 +72,7 @@ def send(
         raise MessagingError("msg must not be empty")
 
     sender = _identity(sender_directory)
-    allowed = _allowed_recipients(sender_directory / "config.toml")
+    allowed = _allowed_receivers(sender_directory / "config.toml")
     recipient = _resolve(receiver, sender, allowed)
 
     _submit(
@@ -90,35 +90,78 @@ def send(
     }
 
 
+def route_source(
+    sender_directory: Path,
+    source: str,
+    receiver_agent_id: str,
+) -> dict[str, str]:
+    """Authorize and reassign one persistent source owned by the caller."""
+    if not isinstance(source, str) or not source:
+        raise MessagingError("source must be a non-empty string")
+    if not isinstance(receiver_agent_id, str) or not receiver_agent_id:
+        raise MessagingError("receiver_agent_id must be a non-empty string")
+
+    sender = _identity(sender_directory)
+    instance = sender.get("instance")
+    if not isinstance(instance, str) or not instance or instance == "fresh":
+        raise MessagingError("the calling agent does not have a persistent instance")
+
+    receiver = ag.restore(receiver_agent_id)
+    allowed = _allowed_receivers(sender_directory / "config.toml")
+    if not allowed.allows(receiver.record["role"], receiver.agent_id):
+        raise MessagingError(
+            f"agent {sender['agent_id']!r} may not route to role "
+            f"{receiver.record['role']!r} or agent {receiver.agent_id!r}"
+        )
+    if receiver.record["role"] != sender["role"] or str(receiver.cwd) != sender["cwd"]:
+        raise MessagingError(
+            "a routed source receiver must have the calling agent's role and cwd"
+        )
+
+    route = Route(source, sender["cwd"], sender["role"], instance)
+    try:
+        status = reassign(route, sender["agent_id"], receiver.agent_id)
+    except RouteError as exc:
+        raise MessagingError(str(exc)) from exc
+    return {
+        "source": source,
+        "status": status,
+        "receiver_agent_id": receiver.agent_id,
+        "receiver_role": receiver.record["role"],
+    }
+
+
 def _identity(directory: Path) -> dict[str, str]:
     path = directory / "record.json"
     try:
         record = json.loads(path.read_text("utf-8"))
-        identity = {"agent_id": record["agent_id"], "role": record["role"]}
+        identity = {field: record[field] for field in ("agent_id", "role", "cwd")}
+        if "instance" in record:
+            identity["instance"] = record["instance"]
         if not all(isinstance(value, str) and value for value in identity.values()):
-            raise TypeError("agent_id and role must be non-empty strings")
+            raise TypeError("agent_id, role, and cwd must be non-empty strings")
         return identity
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise MessagingError(f"cannot read agent identity from {path}: {exc}") from exc
 
 
-def _allowed_recipients(path: Path) -> AllowedRecipients:
+def _allowed_receivers(path: Path) -> AllowedReceivers:
     try:
         config = tomllib.loads(path.read_text("utf-8")) if path.exists() else {}
-        rules = config.get("messaging", {}).get("allowed_recipients", {})
+        rules = config.get("allowed_receivers", {})
         roles = _string_list(rules.get("roles", []), path, "roles")
         ids = _string_list(rules.get("ids", []), path, "ids")
     except (OSError, tomllib.TOMLDecodeError, AttributeError) as exc:
         raise MessagingError(
-            f"cannot read messaging.allowed_recipients from {path}: {exc}"
+            f"cannot read allowed_receivers from {path}: {exc}"
         ) from exc
-    return AllowedRecipients(frozenset(roles), frozenset(ids))
+    return AllowedReceivers(frozenset(roles), frozenset(ids))
 
 
 def _string_list(value: Any, path: Path, field: str) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise MessagingError(
-            f"{path}: messaging.allowed_recipients.{field} must be a list of strings"
+            f"{path}: allowed_receivers.{field} must be a list of strings"
         )
     return value
 
@@ -126,7 +169,7 @@ def _string_list(value: Any, path: Path, field: str) -> list[str]:
 def _resolve(
     receiver: str | dict[str, Any],
     sender: dict[str, str],
-    allowed: AllowedRecipients,
+    allowed: AllowedReceivers,
 ) -> ag.Agent:
     if isinstance(receiver, str):
         recipient = ag.restore(receiver)
@@ -152,7 +195,7 @@ def _resolve(
 
 
 def _create(
-    allowed: AllowedRecipients,
+    allowed: AllowedReceivers,
     role: str,
     cwd: str | None = None,
     **record: Any,

@@ -1,6 +1,6 @@
 ---
 name: messaging
-description: Create a BeeLoop agent, send it an asynchronous message, or reply to one.
+description: Create a BeeLoop agent, send or reply to a message, or route an owned input source.
 ---
 
 # BeeLoop messaging
@@ -17,15 +17,15 @@ agent resolved from a route.
 
 Incoming agent messages have a source such as `agent:<id>`. Reply explicitly by
 calling `message(receiver="<id>", msg="...")`. A reply is a new outbound
-message, so your own `messaging.allowed_recipients` policy must allow the
+message, so your own `allowed_receivers` policy must allow the
 original sender. Do not reply merely to acknowledge receipt, and avoid reply
 loops unless another turn is needed to complete the work.
 
-Messaging is denied unless the sender's snapshotted `config.toml` allows the
-recipient by role or exact agent ID:
+Messaging, agent creation, and source routing are denied unless the caller's
+snapshotted `config.toml` allows the receiver by role or exact agent ID:
 
 ```toml
-[messaging.allowed_recipients]
+[allowed_receivers]
 roles = ["worker", "logger"]
 ids = ["0198ff2a-0000-7000-8000-000000000000"]
 ```
@@ -39,3 +39,9 @@ A receiver route contains `role` and optional `cwd` and `instance`. Omit
 new agent through the same authorized creation path as `create_agent`. Use any
 other non-empty value, including `default`, to reuse the latest restorable agent
 for that route.
+
+Use `route_source(source, receiver_agent_id)` to move a persistent input source
+owned by this agent to an allowed existing agent with the same role and cwd.
+Forward the complete input packet before routing its sources. The result is
+`routed` or `already_routed`; the tool cannot create agents or take another
+agent's route.

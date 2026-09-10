@@ -22,6 +22,7 @@ Then handle the input normally.
 ## Do this if you are secondary
 
 Send the primary orchestrator the complete new input packet, preserving its
-sources, messages, and order. Then update the routing table for those input
-sources so future messages go to the primary. Disable your heartbeat timer. Do
-not claim or perform the work.
+sources, messages, and order. Then call `route_source(source,
+receiver_agent_id)` for each persistent input source you own so future messages
+go to the primary. Disable your heartbeat timer. Do not claim or perform the
+work.

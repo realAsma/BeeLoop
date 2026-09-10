@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -14,6 +15,7 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+import beebot.dispatch.dispatch as dsp
 from beebot import agents as ag
 from beebot.agents import records
 from beebot.agents.backends import fake
@@ -52,7 +54,7 @@ def rules(
     ids: list[str] | None = None,
 ) -> None:
     body = (
-        "[messaging.allowed_recipients]\n"
+        "[allowed_receivers]\n"
         f"roles = {json.dumps(roles or [])}\n"
         f"ids = {json.dumps(ids or [])}\n"
     )
@@ -72,6 +74,15 @@ def accepted(receiver: ag.Agent) -> dict[str, str]:
         "receiver_agent_id": receiver.agent_id,
         "receiver_role": receiver.record["role"],
     }
+
+
+def routed_pair(source: str = "slack:thread") -> tuple[ag.Agent, ag.Agent, Route]:
+    sender = as_fake(orchestrator(instance="secondary"))
+    receiver = as_fake(orchestrator(instance="primary"))
+    route = Route(source, sender.record["cwd"], sender.record["role"], "secondary")
+    route.new(sender.agent_id)
+    bind(sender)
+    return sender, receiver, route
 
 
 def wait_for(predicate, timeout: float = 5) -> None:
@@ -108,6 +119,7 @@ def test_the_live_server_exposes_the_bound_messaging_and_timer_tools():
         "get_agent_id",
         "create_agent",
         "message",
+        "route_source",
         "timer_create",
         "timer_list",
         "timer_cancel",
@@ -121,6 +133,10 @@ def test_the_live_server_exposes_the_bound_messaging_and_timer_tools():
     assert set(message["properties"]) == {"receiver", "msg"}
     assert set(message["required"]) == {"receiver", "msg"}
     assert "fresh" in tool.description
+    route = listed.tools[3]
+    assert set(route.inputSchema["properties"]) == {"source", "receiver_agent_id"}
+    assert set(route.inputSchema["required"]) == {"source", "receiver_agent_id"}
+    assert "existing agent" in route.description
     assert identity.content[0].text == agent.agent_id
 
 
@@ -330,7 +346,7 @@ def test_recipient_config_is_not_read(monkeypatch):
     rules(sender, roles=["logger"])
     recipient_config = records.agent_path(receiver.agent_id) / "config.toml"
     recipient_config.write_text(
-        '[messaging.allowed_recipients]\nroles = "not a list"\n', encoding="utf-8"
+        '[allowed_receivers]\nroles = "not a list"\n', encoding="utf-8"
     )
     monkeypatch.setattr(messaging, "_submit", lambda *args: None)
 
@@ -342,14 +358,146 @@ def test_malformed_allowed_recipient_lists_name_the_policy(field, value):
     sender, receiver = sender_and_receiver()
     config = records.agent_path(sender.agent_id) / "config.toml"
     config.write_text(
-        f"[messaging.allowed_recipients]\n{field} = {value}\n", encoding="utf-8"
+        f"[allowed_receivers]\n{field} = {value}\n", encoding="utf-8"
     )
 
     with pytest.raises(
         server.MessagingError,
-        match=rf"messaging\.allowed_recipients\.{field}",
+        match=rf"allowed_receivers\.{field}",
     ):
         server.message(receiver.agent_id, "hello")
+
+
+def test_the_old_messaging_policy_no_longer_authorizes_receivers(monkeypatch):
+    sender, receiver = sender_and_receiver()
+    config = records.agent_path(sender.agent_id) / "config.toml"
+    config.write_text(
+        '[messaging.allowed_recipients]\nroles = ["*"]\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(messaging, "_submit", lambda *args: pytest.fail("dispatched"))
+
+    with pytest.raises(server.MessagingError, match="may not send"):
+        server.message(receiver.agent_id, "hello")
+
+
+@pytest.mark.parametrize("grant", ["role", "id"])
+def test_route_source_uses_the_shared_receiver_policy(grant):
+    sender, receiver, route = routed_pair()
+    rules(
+        sender,
+        roles=[receiver.record["role"]] if grant == "role" else None,
+        ids=[receiver.agent_id] if grant == "id" else None,
+    )
+
+    assert server.route_source(route.source, receiver.agent_id) == {
+        "source": route.source,
+        "status": "routed",
+        "receiver_agent_id": receiver.agent_id,
+        "receiver_role": receiver.record["role"],
+    }
+    assert route.resolve() == receiver.agent_id
+
+
+def test_route_source_is_idempotent_and_redirects_subsequent_delivery():
+    sender, receiver, route = routed_pair()
+    rules(sender, ids=[receiver.agent_id])
+
+    assert server.route_source(route.source, receiver.agent_id)["status"] == "routed"
+    assert (
+        server.route_source(route.source, receiver.agent_id)["status"]
+        == "already_routed"
+    )
+
+    dsp.dispatch(
+        Envelope(
+            role=sender.record["role"],
+            agent_id=None,
+            cwd=sender.record["cwd"],
+            instance=sender.record["instance"],
+            source=route.source,
+            msg="continued",
+        )
+    )
+    assert fake.turns(receiver.agent_id)[-1][-1] == [route.source, "continued"]
+    assert fake.turns(sender.agent_id) == []
+
+
+def test_route_source_rejects_same_key_retry_from_an_unrelated_caller():
+    sender, receiver, route = routed_pair()
+    rules(sender, ids=[receiver.agent_id])
+    assert server.route_source(route.source, receiver.agent_id)["status"] == "routed"
+
+    unrelated = orchestrator(instance=sender.record["instance"])
+    bind(unrelated)
+    rules(unrelated, ids=[receiver.agent_id])
+
+    with pytest.raises(server.MessagingError, match="another agent"):
+        server.route_source(route.source, receiver.agent_id)
+
+
+def test_route_source_rejects_ephemeral_unknown_and_other_owned_sources():
+    ephemeral = orchestrator()
+    receiver = orchestrator(instance="primary")
+    bind(ephemeral)
+    rules(ephemeral, ids=[receiver.agent_id])
+    with pytest.raises(server.MessagingError, match="persistent instance"):
+        server.route_source("slack:ephemeral", receiver.agent_id)
+
+    sender, receiver, route = routed_pair("slack:unknown")
+    rules(sender, ids=[receiver.agent_id])
+    route.remove()
+    with pytest.raises(server.MessagingError, match="has no route"):
+        server.route_source(route.source, receiver.agent_id)
+
+    other = orchestrator(instance="other")
+    route.new(other.agent_id)
+    with pytest.raises(server.MessagingError, match="another agent"):
+        server.route_source(route.source, receiver.agent_id)
+
+
+def test_route_source_requires_an_allowed_compatible_existing_receiver():
+    sender, receiver, route = routed_pair()
+    rules(sender)
+    with pytest.raises(server.MessagingError, match="may not route"):
+        server.route_source(route.source, receiver.agent_id)
+
+    rules(sender, ids=["*"])
+    incompatible = [
+        orchestrator(cwd="workspaces/elsewhere", instance="primary"),
+        ag.create("logger", cwd=sender.record["cwd"], instance="primary"),
+    ]
+    for receiver in incompatible:
+        with pytest.raises(server.MessagingError, match="role and cwd"):
+            server.route_source(route.source, receiver.agent_id)
+
+    with pytest.raises(ag.UnknownAgent):
+        server.route_source(
+            route.source, "0198ff2a-0000-7000-8000-000000000000"
+        )
+
+
+def test_concurrent_route_retries_append_one_reassignment():
+    sender, receiver, route = routed_pair("slack:contended")
+    rules(sender, ids=[receiver.agent_id])
+    directory = records.agent_path(sender.agent_id)
+    start = threading.Barrier(8)
+    statuses = []
+
+    def move():
+        start.wait()
+        statuses.append(
+            messaging.route_source(directory, route.source, receiver.agent_id)["status"]
+        )
+
+    threads = [threading.Thread(target=move) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+
+    assert statuses.count("routed") == 1
+    assert statuses.count("already_routed") == 7
+    assert len(records.runtime().joinpath("routes.jsonl").read_text().splitlines()) == 2
 
 
 def test_accepted_does_not_wait_for_the_receiver_process(monkeypatch):
