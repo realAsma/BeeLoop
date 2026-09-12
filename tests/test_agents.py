@@ -117,6 +117,7 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
     role = ag.load_role("orchestrator")
     config = tomllib.loads((role.directory / "role.toml").read_text("utf-8"))
 
+    assert role.cwd is None
     assert role.session_ttl == session_ttl.Policy(
         idle_seconds=3600, max_age_seconds=86400
     )
@@ -138,7 +139,7 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
     assert config["allowed_receivers"]["roles"] == ["*"]
 
     canonical = role.template / ".agents" / "skills"
-    source_template = SOURCE / "configs" / "roles" / "orchestrator" / "template"
+    source_template = SOURCE / "templates" / "orchestrator"
     instructions = (source_template / "AGENTS.md").read_text(encoding="utf-8")
     assert "`event-driven-operation` skill" in instructions
     assert "`worker-delegation` skill" in instructions
@@ -222,10 +223,11 @@ def test_seeding_never_overwrites_a_file_that_is_already_there(beebot_root):
 
 def test_seeding_preserves_directory_symlinks(beebot_root):
     role_dir = make_role(beebot_root, "linked", SEEDED)
-    canonical = role_dir / "template" / ".agents" / "skills" / "logging"
+    template = beebot_root / "templates" / role_dir.name
+    canonical = template / ".agents" / "skills" / "logging"
     canonical.mkdir(parents=True)
     (canonical / "SKILL.md").write_text("how to log", encoding="utf-8")
-    linked = role_dir / "template" / ".claude" / "skills" / "logging"
+    linked = template / ".claude" / "skills" / "logging"
     linked.parent.mkdir(parents=True)
     linked.symlink_to("../../.agents/skills/logging", target_is_directory=True)
 
@@ -252,9 +254,10 @@ def test_seeding_does_not_overwrite_a_broken_destination_symlink(beebot_root):
 
 
 def test_the_role_config_never_reaches_a_workspace(beebot_root):
-    """Only `template/` is copied, so this holds by construction rather than by
-    a blocklist that the next config file would outgrow."""
-    agent = ag.create("logger")
+    """Only the role template is copied, so this holds by construction rather
+    than by a blocklist that the next config file would outgrow."""
+    make_role(beebot_root, "configured", SEEDED, TEMPLATE)
+    agent = ag.create("configured")
 
     assert (agent.cwd / "AGENTS.md").exists()
     assert not (agent.cwd / "role.toml").exists()

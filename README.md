@@ -11,7 +11,7 @@ Architecture notes to follow. For the envelope format, see `inputs.d/README.md`.
 
 ```sh
 pip install -e .          # src/beebot/ -- the installed code
-export BEEBOT_ROOT="$PWD" # runtime/, logs/, inputs.d/, configs/ -- the tree
+export BEEBOT_ROOT="$PWD" # runtime/, logs/, inputs.d/, configs/, templates/
 gateway/loop &            # poll adapters, dispatch what they produce
 $EDITOR letterbox         # any edit posts it once; `touch letterbox` re-sends
 tail -f logs/dispatch.log

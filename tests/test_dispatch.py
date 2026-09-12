@@ -244,14 +244,14 @@ def test_one_source_in_two_workspaces_is_two_agents(routes):
     assert agent_count() == 2
 
 
-def test_the_defaults_key_the_same_as_naming_them(routes, monkeypatch):
+def test_the_default_role_keys_the_same_as_naming_it(routes, monkeypatch):
     """The trap the whole design turns on: the key is the RESOLVED role and
     cwd. Keying on what arrived would make an envelope that says nothing and an
     envelope that spells out the same answer two keys -- and every such
     mismatch is a duplicate agent, months before anyone notices."""
     monkeypatch.setattr(rt, "DEFAULT_ROLE", "orchestrator")
 
-    silent = key(role="", cwd="")  # `orchestrator` names its own cwd
+    silent = key(role="", cwd="workspaces/orchestrator")
     spelled = key(role="orchestrator", cwd="workspaces/orchestrator")
 
     assert silent == spelled

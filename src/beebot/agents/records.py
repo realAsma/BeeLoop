@@ -37,7 +37,8 @@ def root() -> Path:
     if not given:
         raise AgentError(
             "BEEBOT_ROOT is not set; point it at the BeeBot deployment tree "
-            "-- the directory holding runtime/, logs/, inputs.d/ and configs/"
+            "-- the directory holding runtime/, logs/, inputs.d/, configs/ and "
+            "templates/"
         )
     found = Path(given)
     if not found.is_dir():

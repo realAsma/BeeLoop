@@ -11,6 +11,7 @@
 !/.agents/plugins/marketplace.json
 !/gateway/**
 !/configs/**
+!/templates/**
 !/tests/**
 
 !/inputs.d/README.md

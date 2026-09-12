@@ -63,7 +63,7 @@ def rules(
 
 def sender_and_receiver() -> tuple[ag.Agent, ag.Agent]:
     sender = as_fake(orchestrator())
-    receiver = as_fake(ag.create("logger"))
+    receiver = as_fake(ag.create("worker", cwd="workspaces/receiver"))
     bind(sender)
     return sender, receiver
 
@@ -226,7 +226,7 @@ def test_identity_is_read_from_the_bound_record_on_every_call():
 
 def test_timer_tools_can_manage_only_the_bound_agents_record():
     first = orchestrator()
-    second = ag.create("logger")
+    second = ag.create("worker", cwd="workspaces/worker")
     bind(first)
 
     created = server.timer_create("check", after="1h")
@@ -247,7 +247,7 @@ def test_timer_tools_can_manage_only_the_bound_agents_record():
 @pytest.mark.parametrize(
     "grant",
     [
-        {"roles": ["logger"]},
+        {"roles": ["worker"]},
         {"ids": ["receiver"]},
         {"roles": ["*"]},
         {"ids": ["*"]},
@@ -307,15 +307,15 @@ def test_empty_messages_are_refused_before_dispatch(monkeypatch):
     [
         ({}, "non-empty role"),
         ({"role": ""}, "non-empty role"),
-        ({"role": "logger", "cwd": 1}, "cwd"),
-        ({"role": "logger", "instance": []}, "instance"),
+        ({"role": "worker", "cwd": 1}, "cwd"),
+        ({"role": "worker", "instance": []}, "instance"),
         (42, "agent ID or a route object"),
     ],
 )
 def test_malformed_receivers_are_refused(receiver, match, monkeypatch):
     sender = orchestrator()
     bind(sender)
-    rules(sender, roles=["logger"])
+    rules(sender, roles=["worker"])
     monkeypatch.setattr(messaging, "_submit", lambda *args: pytest.fail("dispatched"))
 
     with pytest.raises(server.MessagingError, match=match):
@@ -330,7 +330,7 @@ def test_live_sender_config_edits_take_effect(monkeypatch):
     with pytest.raises(server.MessagingError, match="may not send"):
         server.message(receiver.agent_id, "first")
 
-    rules(sender, roles=["logger"])
+    rules(sender, roles=["worker"])
     assert server.message(receiver.agent_id, "second") == accepted(receiver)
 
     rules(sender)
@@ -343,7 +343,7 @@ def test_live_sender_config_edits_take_effect(monkeypatch):
 
 def test_recipient_config_is_not_read(monkeypatch):
     sender, receiver = sender_and_receiver()
-    rules(sender, roles=["logger"])
+    rules(sender, roles=["worker"])
     recipient_config = records.agent_path(receiver.agent_id) / "config.toml"
     recipient_config.write_text(
         '[allowed_receivers]\nroles = "not a list"\n', encoding="utf-8"
@@ -353,7 +353,7 @@ def test_recipient_config_is_not_read(monkeypatch):
     assert server.message(receiver.agent_id, "hello") == accepted(receiver)
 
 
-@pytest.mark.parametrize("field,value", [("roles", '"logger"'), ("ids", '{}')])
+@pytest.mark.parametrize("field,value", [("roles", '"worker"'), ("ids", '{}')])
 def test_malformed_allowed_recipient_lists_name_the_policy(field, value):
     sender, receiver = sender_and_receiver()
     config = records.agent_path(sender.agent_id) / "config.toml"
@@ -446,7 +446,7 @@ def test_route_source_requires_an_allowed_compatible_existing_receiver():
     rules(sender, ids=["*"])
     incompatible = [
         orchestrator(cwd="workspaces/elsewhere", instance="primary"),
-        ag.create("logger", cwd=sender.record["cwd"], instance="primary"),
+        ag.create("worker", cwd=sender.record["cwd"], instance="primary"),
     ]
     for receiver in incompatible:
         with pytest.raises(server.MessagingError, match="role and cwd"):
@@ -664,11 +664,11 @@ def test_message_route_uses_the_shared_authorized_creator(beebot_root, monkeypat
 def test_receiver_routes_reject_unknown_fields(monkeypatch):
     sender = orchestrator()
     bind(sender)
-    rules(sender, roles=["logger"])
+    rules(sender, roles=["worker"])
     monkeypatch.setattr(messaging, "_submit", lambda *args: None)
 
     with pytest.raises(server.MessagingError, match="instnace"):
-        server.message({"role": "logger", "instnace": "one"}, "hello")
+        server.message({"role": "worker", "instnace": "one"}, "hello")
 
 
 def test_idle_delivery_is_detached_framed_and_logged():
@@ -686,7 +686,7 @@ def test_idle_delivery_is_detached_framed_and_logged():
 
 def test_busy_delivery_parks_then_drains_on_the_next_message():
     sender, receiver = sender_and_receiver()
-    rules(sender, roles=["logger"])
+    rules(sender, roles=["worker"])
     held = records.claim(receiver.agent_id, [])
     assert held is not None
     try:

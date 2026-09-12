@@ -47,7 +47,7 @@ class Envelope:
 
 # Every header key the envelope carries. Declared once and enforced at parse,
 # because this is the only checkpoint there is: `inputs.d/` is gitignored
-# deployment state and adapters are not code we control. Without it `roll=logger`
+# deployment state and adapters are not code we control. Without it `roll=worker`
 # is dropped in silence and routes to the default role instead.
 FIELDS = frozenset({"role", "agent_id", "cwd", "instance", "source"})
 

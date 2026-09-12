@@ -10,12 +10,13 @@ import pytest
 from beebot import agents as ag
 from beebot.agents import records
 
-# The source tree, for its checked-in `configs/` only. Not a BEEBOT_ROOT: the
-# packages come from the install, and each test gets a root of its own below.
+# The source tree, for its checked-in configs and templates. Not a BEEBOT_ROOT:
+# the packages come from the install, and each test gets a root of its own below.
 SOURCE = Path(__file__).resolve().parents[1]
 
 
 def orchestrator(role: str = "orchestrator", **kwargs) -> ag.Agent:
+    kwargs.setdefault("cwd", "workspaces/orchestrator")
     return ag.create(role, **kwargs)
 
 
@@ -36,7 +37,7 @@ def make_role(
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "role.toml").write_text(config, encoding="utf-8")
     for relative, body in (template or {}).items():
-        path = directory / "template" / relative
+        path = home / "templates" / name / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
     return directory
@@ -55,6 +56,7 @@ def beebot_root(tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatc
     """
     home = Path(str(tmp_path))
     shutil.copytree(SOURCE / "configs", home / "configs")
+    shutil.copytree(SOURCE / "templates", home / "templates")
     # Made here rather than checked in: git cannot track an empty directory,
     # and empty is the whole point -- `worker` is the role that says nothing.
     (home / "configs" / "roles" / "worker").mkdir(exist_ok=True)

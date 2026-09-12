@@ -1,6 +1,6 @@
 ---
 name: input-handle
-description: Handle or reply to a BeeLoop input by loading the runtime workflow selected by its source prefix. Use when a non-agent input needs source-specific interpretation or an external reply.
+description: Handle or reply to a BeeLoop input. Use when a non-agent input needs source-specific handling or an external reply.
 ---
 
 # Handle an input
@@ -8,17 +8,15 @@ description: Handle or reply to a BeeLoop input by loading the runtime workflow 
 The `source` on an input is its external session and reply handle. BeeLoop does
 not deliver your ordinary model response back to that source.
 
-For a source shaped as `<input-name>:<session-key>`:
+For a source shaped as `<source-name>:<session-key>`:
 
-1. Split once at the first `:` and require `<input-name>` to match
+1. Split once at the first `:` and require `<source-name>` to match
    `[a-z0-9][a-z0-9-]*`.
 2. Look for
-   `$BEEBOT_ROOT/runtime/inputs/<input-name>/SKILL.md`.
-3. If it exists and you have not already read it in this retained conversation,
-   read it completely before handling the input or replying. Use its helper
-   exactly as documented and pass the complete source value.
-4. If it does not exist, handle the input normally, but do not guess a reply
-   mechanism or claim that your ordinary response reached the external source.
+   `$BEEBOT_ROOT/runtime/sources/<source-name>/SKILL.md`.
+3. If found, read it completely unless already read in this retained
+   conversation. Follow it and pass the complete `source` to its documented
+   reply helper.
+4. If absent, handle the input normally; do not invent a reply mechanism.
 
 For `agent:<agent-id>` sources, use the BeeLoop `messaging` skill instead.
-Never substitute a generic connector for a runtime workflow's reply helper.

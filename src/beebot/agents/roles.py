@@ -41,7 +41,7 @@ class Role:
 
     @property
     def template(self) -> Path:
-        return self.directory / "template"
+        return root() / "templates" / self.directory.name
 
     def prompt(self, name: str, default: str | None = None) -> str | None:
         prompt = self.prompts.get(name, default)

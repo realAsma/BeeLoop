@@ -20,6 +20,7 @@ from .base import (
 
 _BACKENDS = {
     "claude_code": ".claude:ClaudeBackend",
+    "codex": ".codex:CodexBackend",
     "fake": ".fake:FakeBackend",
 }
 
