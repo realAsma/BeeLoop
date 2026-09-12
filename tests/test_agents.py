@@ -80,7 +80,7 @@ def test_an_empty_directory_is_a_working_role(beebot_root):
     [
         ("orchestrator", "codex", "approve_for_me"),
         ("worker", "claude_code", "approve_for_me"),
-        ("read_only_worker", "claude_code", "read"),
+        ("planner", "claude_code", "read"),
     ],
 )
 def test_checked_in_roles_select_their_backend_and_permissions(

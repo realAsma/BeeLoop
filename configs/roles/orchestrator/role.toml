@@ -1,3 +1,4 @@
+#CHANGEME: set to "codex" or "claude_code".
 backend = "codex"
 permissions = "approve_for_me"
 
