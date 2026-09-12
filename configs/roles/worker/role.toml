@@ -1,0 +1,2 @@
+backend = "claude_code"
+permissions = "approve_for_me"

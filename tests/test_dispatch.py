@@ -10,6 +10,7 @@ import pytest
 
 from beebot import agents as ag
 from beebot.agents import records
+from beebot.agents.backends import BackendError
 import beebot.dispatch.dispatch as dsp
 import beebot.dispatch.envelope as env
 import beebot.dispatch.routes as rt
@@ -29,7 +30,7 @@ def agent_count() -> int:
     return len(list(records.runtime("agents").glob("*/record.json")))
 
 
-# `worker` is the empty role, so it names no cwd and every envelope must.
+# `worker` names no cwd, so every route-addressed envelope must.
 WORKSPACE = "workspaces/worker"
 
 
@@ -40,6 +41,7 @@ def envelope(**fields) -> str:
         "agent_id": "",
         "cwd": WORKSPACE,
         "instance": "default",
+        "backend": "",
         "source": "timer:t",
         **fields,
     }
@@ -77,7 +79,10 @@ def test_a_missing_trailing_newline_parses():
 @pytest.mark.parametrize(
     "original",
     [
-        env.Envelope("worker", None, "timer:t", "line one\nline two", WORKSPACE),
+        env.Envelope(
+            "worker", None, "timer:t", "line one\nline two", WORKSPACE,
+            backend="codex",
+        ),
         env.Envelope(None, "01a0-x", "agent:sender", "continue"),
     ],
 )
@@ -110,6 +115,15 @@ def test_instance_and_agent_id_together_are_refused():
     caller holding both has already contradicted itself."""
     with pytest.raises(env.EnvelopeError, match="both instance="):
         env.parse(envelope(role="", cwd="", agent_id="01a0-x", instance="a"))
+
+
+def test_backend_and_agent_id_together_are_refused():
+    with pytest.raises(env.EnvelopeError, match="both backend="):
+        env.parse(
+            envelope(
+                role="", cwd="", instance="", agent_id="01a0-x", backend="codex"
+            )
+        )
 
 
 def test_an_unknown_field_is_refused_and_named():
@@ -259,6 +273,29 @@ def test_the_default_role_keys_the_same_as_naming_it(routes, monkeypatch):
     assert agent_count() == 1
 
 
+def test_the_default_backend_keys_the_same_as_naming_it(routes):
+    silent = key(backend="")
+    spelled = key(backend="claude_code")
+
+    assert silent == spelled
+    assert rt.agent_for(silent).agent_id == rt.agent_for(spelled).agent_id
+    assert agent_count() == 1
+
+
+def test_backend_is_part_of_the_route_and_agent_identity(routes):
+    claude = rt.agent_for(key(backend="claude_code"))
+    codex = rt.agent_for(key(backend="codex"))
+
+    assert claude.agent_id != codex.agent_id
+    assert records.read(claude.agent_id)["backend"] == "claude_code"
+    assert records.read(codex.agent_id)["backend"] == "codex"
+
+
+def test_an_unknown_backend_is_refused_before_routing():
+    with pytest.raises(BackendError, match="unknown backend"):
+        key(backend="missing")
+
+
 def test_the_keys_cwd_is_the_absolute_one_the_record_holds(routes):
     """Equal as plain strings, so a row can be checked against a record by eye
     and neither has to be resolved again to compare them."""
@@ -285,6 +322,7 @@ def test_legacy_routes_without_an_instance_are_ignored(routes, include_null):
         "source": route.source,
         "cwd": route.cwd,
         "role": route.role,
+        "backend": route.backend,
         "agent_id": "01a0-preinstance",
     }
     if include_null:
@@ -304,8 +342,7 @@ def test_an_accidental_fresh_route_row_is_ignored(routes):
 
 
 def test_default_and_other_named_instances_are_distinct(routes):
-    """The whole point: two agents of one role, on one tree, driven by one
-    source, which the triple alone could never tell apart."""
+    """Two agents of one route differentiated only by their instance."""
     first = rt.agent_for(key(instance="default"))
     second = rt.agent_for(key(instance="other"))
 

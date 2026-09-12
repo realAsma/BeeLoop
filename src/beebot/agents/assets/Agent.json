@@ -51,12 +51,12 @@
     "instance": {
       "type": "string",
       "minLength": 1,
-      "description": "The persistent route name for an agent sharing one (source, cwd, role). Descriptive, not authoritative -- runtime/routes.jsonl decides routing and this only records its answer. Absent means the agent was created without a persistent instance; the reserved value 'fresh' is never recorded."
+      "description": "The persistent route name for an agent sharing one (source, cwd, role, backend). Descriptive, not authoritative -- runtime/routes.jsonl decides routing and this only records its answer. Absent means the agent was created without a persistent instance; the reserved value 'fresh' is never recorded."
     },
     "backend": {
       "type": "string",
       "minLength": 1,
-      "description": "Which adapter speaks for this agent. Read at creation from the role, then fixed -- a session cannot migrate between providers."
+      "description": "Which adapter speaks for this agent. Read at creation from the input or role, then fixed -- a session cannot migrate between providers."
     },
     "cwd": {
       "type": "string",

@@ -6,6 +6,7 @@ Example envelope:
 
 ```text
 role=orchestrator
+backend=codex
 cwd=workspaces/example-project
 instance=default
 source=review:example/project:123
@@ -18,6 +19,7 @@ BeeLoop parses each envelope and dispatches to an agent.
 ## Fields
 
 - `role`: Dispatch/creation role; defaults to `orchestrator`.
+- `backend`: Optional creation backend; defaults to the role's backend.
 - `agent_id`: ID of an existing restorable agent; bypasses route lookup.
 - `cwd`: Working directory; relative paths resolve under `BEEBOT_ROOT`. Uses the role default or is required.
 - `instance`: Persistence name; missing, empty, or `fresh` always creates; named
@@ -35,8 +37,9 @@ BeeLoop parses each envelope and dispatches to an agent.
 - Emit one envelope or nothing to stdout; diagnostics go to stderr.
 - Headers use only fields above as single-line `key=value`; unknown fields are
   rejected. `msg` is last; everything after `msg=` is its body.
-- `agent_id` selects an exact agent and cannot accompany `role`, `cwd`, or
-  `instance`. Otherwise BeeLoop routes by `(source, cwd, role, instance)`.
+- `agent_id` selects an exact agent and cannot accompany `role`, `cwd`,
+  `instance`, or `backend`. Otherwise BeeLoop routes by
+  `(source, cwd, role, backend, instance)`.
 - Format `source` as `<source-name>:<session-key>` with a lowercase, hyphenated
   name and a stable identifier for the smallest external conversation that
   shares a reply destination.

@@ -113,12 +113,17 @@ def route_source(
             f"agent {sender['agent_id']!r} may not route to role "
             f"{receiver.record['role']!r} or agent {receiver.agent_id!r}"
         )
-    if receiver.record["role"] != sender["role"] or str(receiver.cwd) != sender["cwd"]:
+    if (
+        receiver.record["role"] != sender["role"]
+        or str(receiver.cwd) != sender["cwd"]
+        or receiver.record["backend"] != sender["backend"]
+    ):
         raise MessagingError(
-            "a routed source receiver must have the calling agent's role and cwd"
+            "a routed source receiver must have the calling agent's role, cwd, "
+            "and backend"
         )
 
-    route = Route(source, sender["cwd"], sender["role"], instance)
+    route = Route(source, sender["cwd"], sender["role"], sender["backend"], instance)
     try:
         reassign(route, sender["agent_id"], receiver.agent_id)
     except RouteError as exc:
@@ -134,11 +139,16 @@ def _identity(directory: Path) -> dict[str, str]:
     path = directory / "record.json"
     try:
         record = json.loads(path.read_text("utf-8"))
-        identity = {field: record[field] for field in ("agent_id", "role", "cwd")}
+        identity = {
+            field: record[field]
+            for field in ("agent_id", "role", "cwd", "backend")
+        }
         if "instance" in record:
             identity["instance"] = record["instance"]
         if not all(isinstance(value, str) and value for value in identity.values()):
-            raise TypeError("agent_id, role, and cwd must be non-empty strings")
+            raise TypeError(
+                "agent_id, role, cwd, and backend must be non-empty strings"
+            )
         return identity
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise MessagingError(f"cannot read agent identity from {path}: {exc}") from exc
@@ -215,10 +225,12 @@ def _route(receiver: dict[str, Any], sender_id: str) -> Route:
     for field in ("cwd", "instance"):
         if receiver.get(field) is not None and not isinstance(receiver[field], str):
             raise MessagingError(f"receiver route {field} must be a string")
+    configured = load_role(role)
     return Route(
         source=f"agent:{sender_id}",
-        cwd=str(workspace(load_role(role), receiver.get("cwd"))),
+        cwd=str(workspace(configured, receiver.get("cwd"))),
         role=role,
+        backend=configured.backend,
         instance=receiver.get("instance") or None,
     )
 

@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
 
 from beebot import agents as ag
+from beebot.agents import backends
 from beebot.agents.records import runtime
 from beebot.agents.roles import load_role, workspace
 from beebot.dispatch.envelope import Envelope
 
 DEFAULT_ROLE = "orchestrator"
-KEY = ("source", "cwd", "role", "instance")
+KEY = ("source", "cwd", "role", "backend", "instance")
 
 
 class RouteError(RuntimeError):
@@ -30,6 +31,7 @@ class Route:
     source: str
     cwd: str
     role: str
+    backend: str
     instance: str | None = None
 
     @property
@@ -39,10 +41,14 @@ class Route:
     @classmethod
     def of(cls, envelope: Envelope) -> "Route":
         role = envelope.role or DEFAULT_ROLE
+        configured = load_role(role)
+        backend = envelope.backend or configured.backend
+        backends.get(backend)
         return cls(
             source=envelope.source,
-            cwd=str(workspace(load_role(role), envelope.cwd)),
+            cwd=str(workspace(configured, envelope.cwd)),
             role=role,
+            backend=backend,
             instance=envelope.instance,
         )
 
@@ -103,7 +109,7 @@ AgentCreator = Callable[..., ag.Agent]
 def agent_for(key: Route, creator: AgentCreator = ag.create) -> ag.Agent:
     """Resolve or create an agent, serializing the final check and append."""
     if key.ephemeral:
-        return creator(key.role, cwd=key.cwd)
+        return creator(key.role, cwd=key.cwd, backend=key.backend)
     if (agent_id := key.resolve()) and (found := _restored(agent_id)):
         return found
 
@@ -114,7 +120,9 @@ def agent_for(key: Route, creator: AgentCreator = ag.create) -> ag.Agent:
             if (agent_id := key.resolve()) and (found := _restored(agent_id)):
                 return found
             extra = {"instance": key.instance} if key.instance else {}
-            new_agent = creator(key.role, cwd=key.cwd, **extra)
+            new_agent = creator(
+                key.role, cwd=key.cwd, backend=key.backend, **extra
+            )
             key.new(new_agent.agent_id)
             return new_agent
         finally:

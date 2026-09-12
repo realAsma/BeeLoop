@@ -1,3 +1,6 @@
+backend = "codex"
+permissions = "approve_for_me"
+
 [allowed_receivers]
 roles = ["*"]
 

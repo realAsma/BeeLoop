@@ -15,7 +15,7 @@ import pytest
 
 from beebot import agents as ag
 from beebot.agents import records, roles, session_ttl
-from beebot.agents.backends import InputItem, fake
+from beebot.agents.backends import BackendError, InputItem, fake
 from tests.conftest import SOURCE, as_fake, make_role, orchestrator, poke, worker
 
 
@@ -65,13 +65,32 @@ def test_agent_ids_are_version_7_and_ordered_by_time():
 
 def test_an_empty_directory_is_a_working_role(beebot_root):
     """Adding a role is a directory -- and it is allowed to be an empty one."""
-    assert list((beebot_root / "configs" / "roles" / "worker").iterdir()) == []
+    directory = beebot_root / "configs" / "roles" / "empty"
+    directory.mkdir()
 
-    role = ag.load_role("worker")
+    role = ag.load_role("empty")
     assert role.backend == roles.DEFAULT_BACKEND
     assert role.permissions == roles.DEFAULT_PERMISSIONS
     assert role.cwd is None
     assert role.options == {}
+
+
+@pytest.mark.parametrize(
+    ("name", "backend", "permissions"),
+    [
+        ("orchestrator", "codex", "approve_for_me"),
+        ("worker", "claude_code", "approve_for_me"),
+        ("read_only_worker", "claude_code", "read"),
+    ],
+)
+def test_checked_in_roles_select_their_backend_and_permissions(
+    name, backend, permissions
+):
+    role = ag.load_role(name)
+
+    assert role.backend == backend
+    assert role.permissions == permissions
+    assert role.cwd is None
 
 
 def test_a_missing_role_names_the_directory_it_wanted():
@@ -92,10 +111,34 @@ def test_backend_options_for_another_backend_are_not_visible(beebot_root):
     assert ag.load_role("orchestrator").options == {"marker": "mine"}
 
 
+def test_backend_override_uses_that_backends_options(beebot_root):
+    make_role(
+        beebot_root,
+        "configured",
+        'backend = "fake"\ncwd = "workspaces/configured"\n'
+        "[backend_options.codex]\n"
+        'model = "gpt-test"\n'
+        "[backend_options.fake]\n"
+        'marker = "default"\n',
+    )
+
+    agent = ag.create("configured", backend="codex")
+
+    assert agent.record["backend"] == "codex"
+    assert agent.session().options == {"model": "gpt-test"}
+
+
+def test_unknown_backend_is_rejected_before_an_agent_is_written():
+    with pytest.raises(BackendError, match="unknown backend"):
+        worker(backend="missing")
+
+    assert not list(records.runtime("agents").glob("*/record.json"))
+
+
 def test_editing_a_role_reaches_an_agent_that_already_exists(beebot_root):
     """The role is late-bound, so a human edits files and the next turn sees it."""
     agent = as_fake(orchestrator())
-    assert agent.session().permissions == "yolo"
+    assert agent.session().permissions == "approve_for_me"
 
     toml = beebot_root / "configs" / "roles" / "orchestrator" / "role.toml"
     toml.write_text('backend = "fake"\npermissions = "read"\n', encoding="utf-8")
@@ -323,8 +366,10 @@ def test_an_agent_owns_its_record_and_a_snapshot_of_its_role_config(beebot_root)
     assert (directory / "config.toml").read_text("utf-8") == copied_config
 
 
-def test_an_empty_role_creates_an_empty_agent_config():
-    agent = worker()
+def test_an_empty_role_creates_an_empty_agent_config(beebot_root):
+    directory = beebot_root / "configs" / "roles" / "empty"
+    directory.mkdir()
+    agent = ag.create("empty", cwd="workspaces/empty")
 
     assert (records.agent_path(agent.agent_id) / "config.toml").read_text("utf-8") == ""
 

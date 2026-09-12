@@ -53,6 +53,10 @@ def test_cwd_is_the_process_directory_and_never_a_flag():
 
 
 def test_permission_profiles_compile_to_codex_flags():
+    assert "--approve-for-me" in _argv(
+        session(permissions="approve_for_me"), "hi"
+    )
+
     read = _argv(session(permissions="read"), "hi")
     assert read[read.index("--sandbox") + 1] == "read-only"
 

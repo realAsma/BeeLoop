@@ -77,9 +77,11 @@ def accepted(receiver: ag.Agent) -> dict[str, str]:
 
 
 def routed_pair(source: str = "slack:thread") -> tuple[ag.Agent, ag.Agent, Route]:
-    sender = as_fake(orchestrator(instance="secondary"))
-    receiver = as_fake(orchestrator(instance="primary"))
-    route = Route(source, sender.record["cwd"], sender.record["role"], "secondary")
+    sender = orchestrator(instance="secondary", backend="fake")
+    receiver = orchestrator(instance="primary", backend="fake")
+    route = Route(
+        source, sender.record["cwd"], sender.record["role"], "fake", "secondary"
+    )
     route.new(sender.agent_id)
     bind(sender)
     return sender, receiver, route
@@ -409,6 +411,7 @@ def test_route_source_redirects_subsequent_delivery():
             agent_id=None,
             cwd=sender.record["cwd"],
             instance=sender.record["instance"],
+            backend=sender.record["backend"],
             source=route.source,
             msg="continued",
         )
@@ -447,9 +450,10 @@ def test_route_source_requires_an_allowed_compatible_existing_receiver():
     incompatible = [
         orchestrator(cwd="workspaces/elsewhere", instance="primary"),
         ag.create("worker", cwd=sender.record["cwd"], instance="primary"),
+        orchestrator(instance="backend", backend="codex"),
     ]
     for receiver in incompatible:
-        with pytest.raises(server.MessagingError, match="role and cwd"):
+        with pytest.raises(server.MessagingError, match="role, cwd, and backend"):
             server.route_source(route.source, receiver.agent_id)
 
     with pytest.raises(ag.UnknownAgent):
@@ -543,6 +547,7 @@ def test_route_creation_requires_an_allowed_role(beebot_root, monkeypatch, ids):
         source=f"agent:{sender.agent_id}",
         cwd=str((beebot_root / "workspaces" / "target").resolve()),
         role="target",
+        backend="fake",
         instance="one",
     )
     route.new("0198ff2a-0000-7000-8000-000000000000")
@@ -657,6 +662,7 @@ def test_message_route_uses_the_shared_authorized_creator(beebot_root, monkeypat
     assert calls[0][0][1:] == ("target",)
     assert calls[0][1] == {
         "cwd": str((beebot_root / "workspaces" / "target").resolve()),
+        "backend": "fake",
         "instance": "named",
     }
 

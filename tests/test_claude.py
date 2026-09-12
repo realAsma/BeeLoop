@@ -100,9 +100,13 @@ def test_a_permission_profile_outside_the_catalog_is_refused_before_spending():
         _argv(session(permissions="root"), "hi")
 
 
-def test_the_profile_compiles_to_the_tools_own_enum():
-    argv = _argv(session(permissions="read"), "hi")
-    assert argv[argv.index("--permission-mode") + 1] == "plan"
+@pytest.mark.parametrize(
+    ("permissions", "mode"),
+    [("approve_for_me", "auto"), ("read", "plan")],
+)
+def test_the_profile_compiles_to_the_tools_own_enum(permissions, mode):
+    argv = _argv(session(permissions=permissions), "hi")
+    assert argv[argv.index("--permission-mode") + 1] == mode
 
 
 # ---------------------------------------------------------------- the prompt

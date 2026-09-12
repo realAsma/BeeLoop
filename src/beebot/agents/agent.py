@@ -42,6 +42,7 @@ class Agent:
         *,
         role: str | None = None,
         cwd: Path | str | None = None,
+        backend: str | None = None,
         **extra: Any,
     ) -> None:
         if agent_id is not None and role is not None:
@@ -49,10 +50,14 @@ class Agent:
                 "pass an agent_id to continue an agent, or a role to create "
                 "one -- never both; they mean opposite things"
             )
+        if agent_id is not None and backend is not None:
+            raise AgentError(
+                "pass a backend when creating an agent, not when restoring one"
+            )
         if agent_id is not None:
             self.record = read(agent_id)
         elif role is not None:
-            self.record = self._allocate(role, cwd, **extra)
+            self.record = self._allocate(role, cwd, backend, **extra)
         else:
             raise AgentError(
                 "an agent needs either an agent_id to continue or a role to create"
@@ -66,9 +71,12 @@ class Agent:
         cls,
         role_name: str,
         cwd: Path | str | None,
+        backend: str | None,
         **extra: Any,
     ) -> dict[str, Any]:
         role = load_role(role_name)
+        backend_name = backend or role.backend
+        adapter = backends.get(backend_name)
         where = workspace(role, cwd)
         where.mkdir(parents=True, exist_ok=True)
         seed(role.template, where)
@@ -79,9 +87,9 @@ class Agent:
             "type": cls.__name__,
             "agent_id": agent_id,
             "role": role_name,
-            "backend": role.backend,
+            "backend": backend_name,
             "cwd": str(where),
-            "session_id": backends.get(role.backend).open(),
+            "session_id": adapter.open(),
             "status": PREPARED,
             "session_since": stamp,
             "session_last_turn": None,
@@ -318,7 +326,7 @@ class Agent:
             prepared=self.status == PREPARED,
             cwd=self.cwd,
             permissions=self.role.permissions,
-            options=self.role.options,
+            options=self.role.options_for(self.record["backend"]),
         )
 
     def close(self) -> None:
@@ -353,6 +361,13 @@ def restore(agent_id: str) -> Agent:
     return agent_class(read(agent_id)["type"])(agent_id)
 
 
-def create(role: str, cwd: Path | str | None = None, **extra: Any) -> Agent:
+def create(
+    role: str,
+    cwd: Path | str | None = None,
+    backend: str | None = None,
+    **extra: Any,
+) -> Agent:
     found = load_role(role)
-    return agent_class(found.type, found)(role=role, cwd=cwd, **extra)
+    return agent_class(found.type, found)(
+        role=role, cwd=cwd, backend=backend, **extra
+    )

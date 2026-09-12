@@ -34,7 +34,7 @@ class Role:
     backend: str = DEFAULT_BACKEND
     permissions: str = DEFAULT_PERMISSIONS
     cwd: Path | None = None
-    options: Mapping[str, Any] = field(default_factory=dict)
+    backend_options: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     session_ttl: session_ttl.Policy | None = None
     prompts: Mapping[str, str] = field(default_factory=dict)
     heartbeat: str | None = None
@@ -46,6 +46,13 @@ class Role:
     def prompt(self, name: str, default: str | None = None) -> str | None:
         prompt = self.prompts.get(name, default)
         return prompt if prompt and prompt.strip() else None
+
+    @property
+    def options(self) -> Mapping[str, Any]:
+        return self.options_for(self.backend)
+
+    def options_for(self, backend: str) -> Mapping[str, Any]:
+        return self.backend_options.get(backend, {})
 
 
 def load_role(name: str) -> Role:
@@ -76,7 +83,7 @@ def load_role(name: str) -> Role:
         backend=backend,
         permissions=config.get("permissions", DEFAULT_PERMISSIONS),
         cwd=(root() / cwd).resolve() if cwd else None,
-        options=config.get("backend_options", {}).get(backend, {}),
+        backend_options=config.get("backend_options", {}),
         session_ttl=ttl,
         prompts=prompts,
         heartbeat=heartbeat,

@@ -22,6 +22,7 @@ _ARCHIVED_SESSION = re.compile(
 )
 _MISSING_ROLLOUT = re.compile(r"\bno rollout found for thread id \S+\b")
 _PROFILES = {
+    "approve_for_me": ["--approve-for-me"],
     "edit": ["--sandbox", "workspace-write"],
     "read": ["--sandbox", "read-only"],
     "yolo": ["--dangerously-bypass-approvals-and-sandbox"],

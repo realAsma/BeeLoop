@@ -35,6 +35,7 @@ _NO_SESSION = "No conversation found with session ID"
 # has been demonstrated end to end, the ceiling it describes is CLAIMED, not
 # enforced.
 _PROFILES = {
+    "approve_for_me": "auto",
     "yolo": "bypassPermissions",
     "edit": "acceptEdits",
     "read": "plan",
