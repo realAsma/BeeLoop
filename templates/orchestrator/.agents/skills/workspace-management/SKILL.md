@@ -8,22 +8,17 @@ description: Create, find, or organize project workspaces for orchestrated work.
 Follow the user's workspace preferences. Update this skill when the user
 provides workspace feedback or preferences.
 
-Within your current working directory:
+Within your current working directory, create only the directories you need and
+reuse matching workspaces:
 
 ```text
 ./
-├── <agent runtime files, such as AGENTS.md and skills>
+├── <agent runtime files>  # AGENTS.md, skills, and related configuration.
 ├── .gitignore
-├── secrets.env  # User tokens.
-└── workspaces/
-    ├── feature-dev/<repo-name>-<short-work-name>/
-    ├── experiments/<repo-name>-<short-work-name>/
-    └── simple-chat/
+├── secrets.env            # User tokens; keep out of version control.
+├── scripts/               # Broadly reusable orchestrator scripts.
+└── workspaces/            # Project work and scripts; keep out of version control.
+    ├── feature-dev/<repo-name>-<short-work-name>/  # Repository development.
+    ├── experiments/<repo-name>-<short-work-name>/  # Exploratory work.
+    └── simple-chat/                              # Temporary files, downloads, and clones.
 ```
-
-Keep `secrets.env` and `workspaces/` out of version control.
-
-- Use `feature-dev/` for repository development.
-- Use `experiments/` for exploratory work.
-- Use `simple-chat/` for temporary files, downloads, and repository clones.
-- Create only needed directories and reuse matching workspaces.

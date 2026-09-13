@@ -76,9 +76,7 @@ For background processes, Slurm jobs, or delayed checks, read and follow the
 
 ## Extending Capabilities
 
-Extend the narrowest relevant scope. Keep project-specific capabilities in the
-project workspace; add shared orchestrator capabilities here only when broadly
-reusable.
-
-Keep this file lean and do not modify it unless asked. Add reusable workflows
-as skills and external tool or API integrations as MCPs.
+Keep this file lean and modify it only when asked. Extend the narrowest relevant
+scope: use skills for reusable workflows, scripts for reusable executable logic,
+input adapters for event intake, MCPs for external APIs and permission
+boundaries, and dedicated agents for different execution profiles.
