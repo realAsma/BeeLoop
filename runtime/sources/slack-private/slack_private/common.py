@@ -313,8 +313,6 @@ def _parse_assignment(line: str) -> tuple[str, str] | None:
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return None
-    if stripped.startswith("export "):
-        stripped = stripped[len("export ") :].strip()
     name, separator, value = stripped.partition("=")
     if separator != "=" or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name.strip()):
         return None

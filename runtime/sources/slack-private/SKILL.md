@@ -21,5 +21,4 @@ For an inbound event:
 
 Put the result first and keep replies comfortable to read in Slack. Prefer
 short paragraphs, `*bold*` emphasis, `•` bullets, and `<url|label>` links.
-Briefly state blockers and the next useful action. Use `dm` or `dm-thread` only
-for proactive messages to the configured owner.
+Briefly state blockers and the next useful action.

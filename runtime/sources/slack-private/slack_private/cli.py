@@ -19,7 +19,6 @@ from .common import (
     is_slack_download_url,
     load_slack_config,
     parse_slack_permalink,
-    read_env_file,
     require_known_source,
     sanitize_filename,
     secrets_path,
@@ -33,13 +32,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Authenticated private Slack helpers for BeeBot.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    setup_parser = subparsers.add_parser("setup", help="write credentials, verify access, and send a test DM")
-    setup_parser.add_argument("--import-env-file", type=Path)
+    setup_parser = subparsers.add_parser("setup", help="write credentials and verify access")
     setup_parser.add_argument("--non-interactive", action="store_true")
-    setup_parser.add_argument("--no-send-hi", action="store_true")
-
-    verify_parser = subparsers.add_parser("verify", help="verify credentials and allowed DM access")
-    verify_parser.add_argument("--send-hi", action="store_true")
 
     fetch_parser = subparsers.add_parser("fetch", help="fetch an authenticated Slack event and thread")
     fetch_parser.add_argument("--source", required=True)
@@ -57,45 +51,28 @@ def main() -> int:
     upload_parser.add_argument("--caption", default="")
     upload_parser.add_argument("--alt-text", default="")
 
-    dm_parser = subparsers.add_parser("dm", help="send a proactive DM only to the configured owner")
-    dm_parser.add_argument("--text", default="", help="DM text, or '-' to read stdin")
-    dm_parser.add_argument("--file", type=Path)
-    dm_parser.add_argument("--caption", default="")
-    dm_parser.add_argument("--alt-text", default="")
-
-    thread_parser = subparsers.add_parser("dm-thread", help="send a proactive DM header and threaded body")
-    thread_parser.add_argument("--header", required=True)
-    thread_parser.add_argument("--text", required=True, help="thread body, or '-' to read stdin")
-
     args = parser.parse_args()
     root = beebot_root()
     if args.command == "setup":
-        result = setup(root, args.import_env_file, args.non_interactive, not args.no_send_hi)
-    elif args.command == "verify":
-        result = verify(root, args.send_hi)
+        result = setup(root, args.non_interactive)
     elif args.command == "fetch":
         result = fetch(root, args.source, args.permalink, args.download_files, args.output_dir)
     elif args.command == "reply":
         result = reply(root, args.source, _read_text_arg(args.text))
     elif args.command == "upload":
         result = upload(root, args.source, args.file, args.caption, args.alt_text)
-    elif args.command == "dm":
-        result = proactive_dm(root, _read_text_arg(args.text), args.file, args.caption, args.alt_text)
-    elif args.command == "dm-thread":
-        result = proactive_dm_thread(root, args.header, _read_text_arg(args.text))
     else:
         raise AssertionError(args.command)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
 
-def setup(root: Path, import_path: Path | None, non_interactive: bool, send_hi: bool) -> dict[str, Any]:
-    candidates = read_env_file(import_path) if import_path else {}
+def setup(root: Path, non_interactive: bool) -> dict[str, Any]:
     current = load_slack_config(root)
     values = {
-        "SLACK_APP_TOKEN": current.app_token or candidates.get("SLACK_APP_TOKEN", ""),
-        "SLACK_BOT_TOKEN": current.bot_token or candidates.get("SLACK_BOT_TOKEN", ""),
-        "SLACK_ALLOWED_USER_ID": current.allowed_user_id or candidates.get("SLACK_ALLOWED_USER_ID", ""),
+        "SLACK_APP_TOKEN": current.app_token,
+        "SLACK_BOT_TOKEN": current.bot_token,
+        "SLACK_ALLOWED_USER_ID": current.allowed_user_id,
     }
     if not non_interactive:
         for name in REQUIRED_ENV:
@@ -104,25 +81,19 @@ def setup(root: Path, import_path: Path | None, non_interactive: bool, send_hi: 
     if importlib.util.find_spec("slack_sdk") is None:
         raise RuntimeError("slack-sdk is not installed; install BeeBot with the slack extra")
     preserved = write_secrets(root, values)
-    return {**verify(root, send_hi), "secrets_file": str(secrets_path(root)), "preserved": preserved}
-
-
-def verify(root: Path, send_hi: bool = False) -> dict[str, Any]:
     config = _require_config(root)
     client = _web_client(config)
     auth = client.auth_test()
-    dm_id = _open_allowed_dm(client, config.allowed_user_id)
-    if send_hi:
-        client.chat_postMessage(
-            channel=dm_id,
-            text="Hi from BeeBot. Send me a DM to test this private Slack path while the BeeLoop gateway is running.",
-        )
+    response = client.conversations_open(users=config.allowed_user_id)
+    if not (dm_id := (response.get("channel") or {}).get("id")):
+        raise RuntimeError("Slack did not return the configured owner's DM channel")
     return {
         "ok": True,
         "team_id": auth.get("team_id"),
         "bot_user_id": auth.get("user_id"),
         "dm_channel": dm_id,
-        "sent_hi": send_hi,
+        "secrets_file": str(secrets_path(root)),
+        "preserved": preserved,
     }
 
 
@@ -139,7 +110,8 @@ def fetch(
     validate_permalink_source(permalink, source)
     client = _web_client(config)
     context = _fetch_context(client, permalink)
-    _assert_target_message_from_allowed_user(context, config.allowed_user_id)
+    if context["target_message"].get("user") != config.allowed_user_id:
+        raise RuntimeError("Refusing Slack message not sent by SLACK_ALLOWED_USER_ID")
     downloaded: list[dict[str, Any]] = []
     if download_files:
         target_dir = output_dir or downloads_dir(root) / f"{source.channel}_{compact_ts(permalink.ts)}"
@@ -184,50 +156,6 @@ def upload(
     return {"ok": True, "file": response.get("file", {})}
 
 
-def proactive_dm(
-    root: Path,
-    text: str,
-    file_path: Path | None,
-    caption: str,
-    alt_text: str,
-) -> dict[str, Any]:
-    if not text and file_path is None:
-        raise ValueError("dm requires text or a file")
-    config = _require_config(root)
-    client = _web_client(config)
-    dm_id = _open_allowed_dm(client, config.allowed_user_id)
-    result: dict[str, Any] = {"ok": True, "channel": dm_id}
-    if text:
-        result["message_ts"] = client.chat_postMessage(channel=dm_id, text=text).get("ts")
-    if file_path is not None:
-        if not file_path.is_file():
-            raise FileNotFoundError(str(file_path))
-        response = client.files_upload_v2(
-            channel=dm_id,
-            file=str(file_path),
-            title=file_path.name,
-            initial_comment=caption,
-            alt_txt=alt_text or None,
-        )
-        result["file"] = response.get("file", {})
-    return result
-
-
-def proactive_dm_thread(root: Path, header: str, text: str) -> dict[str, Any]:
-    config = _require_config(root)
-    client = _web_client(config)
-    dm_id = _open_allowed_dm(client, config.allowed_user_id)
-    header_response = client.chat_postMessage(channel=dm_id, text=header)
-    header_ts = header_response.get("ts")
-    body_response = client.chat_postMessage(channel=dm_id, text=text, thread_ts=header_ts)
-    return {
-        "ok": True,
-        "channel": dm_id,
-        "message_ts": header_ts,
-        "thread_message_ts": body_response.get("ts"),
-    }
-
-
 def _require_config(root: Path) -> SlackConfig:
     config = load_slack_config(root)
     validate_config(config)
@@ -240,13 +168,6 @@ def _web_client(config: SlackConfig) -> Any:
     except ImportError as exc:
         raise RuntimeError("slack-sdk is not installed; install BeeBot with the slack extra") from exc
     return WebClient(token=config.bot_token)
-
-
-def _open_allowed_dm(client: Any, allowed_user_id: str) -> str:
-    response = client.conversations_open(users=allowed_user_id)
-    if not (dm_id := (response.get("channel") or {}).get("id")):
-        raise RuntimeError("Slack did not return the configured owner's DM channel")
-    return dm_id
 
 
 def _fetch_context(client: Any, permalink: SlackPermalink) -> dict[str, Any]:
@@ -282,11 +203,6 @@ def _fetch_replies_or_history(client: Any, channel: str, thread_ts: str, target_
         pass
     response = client.conversations_history(channel=channel, latest=target_ts, inclusive=True, limit=1)
     return response.get("messages") or []
-
-
-def _assert_target_message_from_allowed_user(context: dict[str, Any], allowed_user_id: str) -> None:
-    if context["target_message"].get("user") != allowed_user_id:
-        raise RuntimeError("Refusing Slack message not sent by SLACK_ALLOWED_USER_ID")
 
 
 def _download_files(

@@ -28,17 +28,9 @@ python3 -m pip install -e '.[slack]'
 runtime/sources/slack-private/slack-private setup
 ```
 
-To migrate an existing environment file without putting tokens on the command
-line, use:
-
-```sh
-runtime/sources/slack-private/slack-private setup \
-  --import-env-file /path/to/old/secrets.sh --non-interactive
-```
-
 Setup reads only `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`, and
 `SLACK_ALLOWED_USER_ID`. It writes them to the ignored `secrets.env` with mode
-`0600`, verifies the workspace and owner DM, and sends a test greeting.
+`0600` and verifies the workspace and owner DM.
 
 Enable intake only after setup succeeds:
 
@@ -46,6 +38,3 @@ Enable intake only after setup succeeds:
 chmod +x inputs.d/slack-private
 gateway/loop
 ```
-
-Do not run this source and an older listener for the same Slack app at the same
-time. Runtime state, logs, credentials, and downloaded files stay ignored.

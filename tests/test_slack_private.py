@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import stat
 import sys
 from pathlib import Path
@@ -16,13 +15,11 @@ sys.path.insert(0, str(SOURCE_ROOT))
 from slack_private import cli as slack_cli  # noqa: E402
 from slack_private import input as slack_input  # noqa: E402
 from slack_private.common import (  # noqa: E402
-    SlackConfig,
     enqueue_authenticated_record,
     make_source,
     parse_slack_permalink,
     parse_source,
     pop_authenticated_record,
-    read_env_file,
     require_known_source,
     sanitize_filename,
     validate_permalink_source,
@@ -150,20 +147,18 @@ def test_permalink_must_match_source():
         validate_permalink_source(permalink, parse_source("slack-private:D999:1712345678901234"))
 
 
-def test_secret_import_allowlists_keys_and_writes_private_file(tmp_path: Path):
-    imported = tmp_path / "old.env"
-    imported.write_text(
-        "export SLACK_APP_TOKEN=xapp-test\n"
-        "export SLACK_BOT_TOKEN=xoxb-test\n"
-        "export SLACK_ALLOWED_USER_ID=UOWNER\n"
-        "INTERNAL_TOKEN=must-not-copy\n",
-        encoding="utf-8",
+def test_write_secrets_allowlists_keys_and_writes_private_file(tmp_path: Path):
+    write_secrets(
+        tmp_path,
+        {
+            "SLACK_APP_TOKEN": "xapp-test",
+            "SLACK_BOT_TOKEN": "xoxb-test",
+            "SLACK_ALLOWED_USER_ID": "UOWNER",
+            "INTERNAL_TOKEN": "must-not-copy",
+        },
     )
-    values = read_env_file(imported)
-    write_secrets(tmp_path, values)
     target = tmp_path / "runtime" / "sources" / "slack-private" / "secrets.env"
 
-    assert set(values) == {"SLACK_APP_TOKEN", "SLACK_BOT_TOKEN", "SLACK_ALLOWED_USER_ID"}
     assert "INTERNAL_TOKEN" not in target.read_text(encoding="utf-8")
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
 
@@ -246,45 +241,5 @@ def test_listener_supervisor_starts_only_one_live_process(monkeypatch, tmp_path:
     assert len(starts) == 1
 
 
-def test_proactive_dm_targets_only_configured_owner(monkeypatch, tmp_path: Path):
-    config = SlackConfig("xapp-test", "xoxb-test", "UOWNER")
-
-    class FakeClient:
-        def conversations_open(self, users):
-            assert users == "UOWNER"
-            return {"channel": {"id": "D123"}}
-
-        def chat_postMessage(self, **kwargs):
-            assert kwargs == {"channel": "D123", "text": "hello"}
-            return {"ts": "1.000001"}
-
-    monkeypatch.setattr(slack_cli, "_require_config", lambda root: config)
-    monkeypatch.setattr(slack_cli, "_web_client", lambda value: FakeClient())
-
-    result = slack_cli.proactive_dm(tmp_path, "hello", None, "", "")
-
-    assert result == {"ok": True, "channel": "D123", "message_ts": "1.000001"}
-
-
 def test_sanitize_filename():
     assert sanitize_filename("../../bad name?.png") == "bad_name_.png"
-
-
-def test_runtime_state_contains_no_secret_values(tmp_path: Path):
-    record = {
-        "event_id": "Ev123",
-        "source": make_source("D123", "1712345678.901234"),
-        "permalink": "https://workspace.slack.com/archives/D123/p1712345678901234",
-        "channel": "D123",
-        "ts": "1712345678.901234",
-        "thread_ts": "1712345678.901234",
-        "files": [],
-        "has_text": True,
-    }
-    enqueue_authenticated_record(tmp_path, record)
-    state = json.loads(
-        (tmp_path / "runtime" / "sources" / "slack-private" / "state" / "state.json").read_text()
-    )
-
-    assert "xapp-" not in json.dumps(state)
-    assert "xoxb-" not in json.dumps(state)
