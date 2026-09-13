@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SOURCE_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+BEEBOT_ROOT="${BEEBOT_ROOT:-$(cd "$SOURCE_ROOT/../../.." && pwd -P)}"
+export BEEBOT_ROOT
+export PYTHONPATH="$SOURCE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
+if command -v python_pwd >/dev/null 2>&1; then
+  exec python_pwd -m slack_private.cli "$@"
+fi
+
+exec python3 -m slack_private.cli "$@"

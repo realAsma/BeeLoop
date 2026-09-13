@@ -15,6 +15,13 @@
 !/tests/**
 
 !/inputs.d/README.md
+!/inputs.d/slack-private
+
+# The Slack source is distributable code; its deployment data stays ignored.
+!/runtime/sources/slack-private/README.md
+!/runtime/sources/slack-private/SKILL.md
+!/runtime/sources/slack-private/slack-private
+!/runtime/sources/slack-private/slack_private/*.py
 
 !/.gitignore
 !/README.md

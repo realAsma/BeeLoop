@@ -12,6 +12,9 @@ dependencies = [
     "mcp",
 ]
 
+[project.optional-dependencies]
+slack = ["slack-sdk"]
+
 [project.scripts]
 beebot-dispatch = "beebot.dispatch.dispatch:main"
 
