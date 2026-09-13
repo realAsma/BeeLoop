@@ -1,6 +1,6 @@
 # Private Slack input
 
-This source connects BeeBot to one configured Slack user through Socket Mode.
+This source connects BeeLoop to one configured Slack user through Socket Mode.
 It accepts only private `message.im` events from that user and creates one
 persistent orchestrator per Slack thread. Message bodies and file bytes are
 fetched only after intake authentication.

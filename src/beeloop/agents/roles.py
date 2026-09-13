@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
-from beebot import timers
+from beeloop import timers
 
 from . import backends
 from . import session_ttl

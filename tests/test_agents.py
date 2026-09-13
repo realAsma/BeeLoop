@@ -13,9 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from beebot import agents as ag
-from beebot.agents import records, roles, session_ttl
-from beebot.agents.backends import BackendError, InputItem, fake
+from beeloop import agents as ag
+from beeloop.agents import records, roles, session_ttl
+from beeloop.agents.backends import BackendError, InputItem, fake
+from beeloop.config import config_path
 from tests.conftest import SOURCE, as_fake, make_role, orchestrator, poke, worker
 
 
@@ -23,8 +24,8 @@ from tests.conftest import SOURCE, as_fake, make_role, orchestrator, poke, worke
 
 
 def test_root_rejects_a_path_that_is_not_a_directory(monkeypatch, tmp_path):
-    monkeypatch.setenv("BEEBOT_ROOT", str(tmp_path / "nope"))
-    with pytest.raises(ag.AgentError, match="BEEBOT_ROOT"):
+    config_path().write_text(f'root = "{tmp_path / "nope"}"\n', encoding="utf-8")
+    with pytest.raises(ag.AgentError, match="not a directory"):
         records.root()
 
 
@@ -63,9 +64,9 @@ def test_agent_ids_are_version_7_and_ordered_by_time():
 # ----------------------------------------------------------------------- roles
 
 
-def test_an_empty_directory_is_a_working_role(beebot_root):
+def test_an_empty_directory_is_a_working_role(beeloop_root):
     """Adding a role is a directory -- and it is allowed to be an empty one."""
-    directory = beebot_root / "configs" / "roles" / "empty"
+    directory = beeloop_root / "configs" / "roles" / "empty"
     directory.mkdir()
 
     role = ag.load_role("empty")
@@ -98,8 +99,8 @@ def test_a_missing_role_names_the_directory_it_wanted():
         ag.load_role("nonesuch")
 
 
-def test_backend_options_for_another_backend_are_not_visible(beebot_root):
-    role_dir = beebot_root / "configs" / "roles" / "orchestrator"
+def test_backend_options_for_another_backend_are_not_visible(beeloop_root):
+    role_dir = beeloop_root / "configs" / "roles" / "orchestrator"
     (role_dir / "role.toml").write_text(
         'backend = "fake"\n'
         "[backend_options.claude_code]\n"
@@ -111,9 +112,9 @@ def test_backend_options_for_another_backend_are_not_visible(beebot_root):
     assert ag.load_role("orchestrator").options == {"marker": "mine"}
 
 
-def test_backend_override_uses_that_backends_options(beebot_root):
+def test_backend_override_uses_that_backends_options(beeloop_root):
     make_role(
-        beebot_root,
+        beeloop_root,
         "configured",
         'backend = "fake"\ncwd = "workspaces/configured"\n'
         "[backend_options.codex]\n"
@@ -135,21 +136,21 @@ def test_unknown_backend_is_rejected_before_an_agent_is_written():
     assert not list(records.runtime("agents").glob("*/record.json"))
 
 
-def test_editing_a_role_reaches_an_agent_that_already_exists(beebot_root):
+def test_editing_a_role_reaches_an_agent_that_already_exists(beeloop_root):
     """The role is late-bound, so a human edits files and the next turn sees it."""
     agent = as_fake(orchestrator())
     assert agent.session().permissions == "approve_for_me"
 
-    toml = beebot_root / "configs" / "roles" / "orchestrator" / "role.toml"
+    toml = beeloop_root / "configs" / "roles" / "orchestrator" / "role.toml"
     toml.write_text('backend = "fake"\npermissions = "read"\n', encoding="utf-8")
 
     assert ag.restore(agent.agent_id).session().permissions == "read"
 
 
-def test_a_broken_role_config_names_the_file_instead_of_leaking_a_parse_error(beebot_root):
+def test_a_broken_role_config_names_the_file_instead_of_leaking_a_parse_error(beeloop_root):
     """Every failure out of this module is an AgentError; a TOMLDecodeError
     escaping load_role would be the one exception to that."""
-    toml = beebot_root / "configs" / "roles" / "worker" / "role.toml"
+    toml = beeloop_root / "configs" / "roles" / "worker" / "role.toml"
     toml.write_text('backend = "unclosed\n', encoding="utf-8")
 
     with pytest.raises(ag.UnknownRole, match="role.toml is broken"):
@@ -170,11 +171,11 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
             "This is your first turn. Use the first-turn flow."
         ),
         "session_expire": (
-            "This session is expiring. Use the BeeBot State save flow and return "
+            "This session is expiring. Use the BeeLoop State save flow and return "
             "a concise handoff hint for continuing the work later."
         ),
         "session_resume": (
-            "This is a new session for existing work. Use the BeeBot State continue "
+            "This is a new session for existing work. Use the BeeLoop State continue "
             "flow with the previous session handoff below."
         ),
         "heartbeat": "This is a heartbeat. Use the heartbeat flow.",
@@ -203,9 +204,9 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
         assert claude_link.resolve() == canonical_source.resolve()
 
 
-def test_role_prompts_are_an_open_string_registry(beebot_root):
+def test_role_prompts_are_an_open_string_registry(beeloop_root):
     make_role(
-        beebot_root,
+        beeloop_root,
         "prompted",
         "[prompts]\n"
         'session_init = "  keep this spacing  "\n'
@@ -223,8 +224,8 @@ def test_role_prompts_are_an_open_string_registry(beebot_root):
 
 
 @pytest.mark.parametrize("config", ['prompts = "no"\n', "[prompts]\nbad = 1\n"])
-def test_role_prompts_reject_non_tables_and_non_strings(beebot_root, config):
-    make_role(beebot_root, "broken-prompts", config)
+def test_role_prompts_reject_non_tables_and_non_strings(beeloop_root, config):
+    make_role(beeloop_root, "broken-prompts", config)
 
     with pytest.raises(ag.UnknownRole, match="prompts"):
         ag.load_role("broken-prompts")
@@ -240,10 +241,10 @@ TEMPLATE = {
 }
 
 
-def test_a_fresh_cwd_is_seeded_with_everything_in_the_template(beebot_root):
+def test_a_fresh_cwd_is_seeded_with_everything_in_the_template(beeloop_root):
     """The gap this closes: an agent whose cwd is not its role directory never
     saw the role's instructions, so they had to ride in every envelope."""
-    make_role(beebot_root, "seeded", SEEDED, TEMPLATE)
+    make_role(beeloop_root, "seeded", SEEDED, TEMPLATE)
     agent = ag.create("seeded")
 
     assert (agent.cwd / "AGENTS.md").read_text("utf-8") == "the standing instructions"
@@ -251,10 +252,10 @@ def test_a_fresh_cwd_is_seeded_with_everything_in_the_template(beebot_root):
     assert (agent.cwd / ".mcp.json").exists(), "a dotfile was skipped"
 
 
-def test_seeding_never_overwrites_a_file_that_is_already_there(beebot_root):
+def test_seeding_never_overwrites_a_file_that_is_already_there(beeloop_root):
     """A human edits a live agent's instructions in place; the next agent
     created into that same cwd must not silently undo the edit."""
-    make_role(beebot_root, "seeded", SEEDED, TEMPLATE)
+    make_role(beeloop_root, "seeded", SEEDED, TEMPLATE)
     first = ag.create("seeded")
     (first.cwd / "AGENTS.md").write_text("edited by hand", encoding="utf-8")
 
@@ -264,9 +265,9 @@ def test_seeding_never_overwrites_a_file_that_is_already_there(beebot_root):
     assert (second.cwd / "AGENTS.md").read_text("utf-8") == "edited by hand"
 
 
-def test_seeding_preserves_directory_symlinks(beebot_root):
-    role_dir = make_role(beebot_root, "linked", SEEDED)
-    template = beebot_root / "templates" / role_dir.name
+def test_seeding_preserves_directory_symlinks(beeloop_root):
+    role_dir = make_role(beeloop_root, "linked", SEEDED)
+    template = beeloop_root / "templates" / role_dir.name
     canonical = template / ".agents" / "skills" / "logging"
     canonical.mkdir(parents=True)
     (canonical / "SKILL.md").write_text("how to log", encoding="utf-8")
@@ -282,9 +283,9 @@ def test_seeding_preserves_directory_symlinks(beebot_root):
     assert seeded.resolve() == (agent.cwd / ".agents" / "skills" / "logging").resolve()
 
 
-def test_seeding_does_not_overwrite_a_broken_destination_symlink(beebot_root):
-    source = beebot_root / "source"
-    destination = beebot_root / "destination"
+def test_seeding_does_not_overwrite_a_broken_destination_symlink(beeloop_root):
+    source = beeloop_root / "source"
+    destination = beeloop_root / "destination"
     source.mkdir()
     destination.mkdir()
     (source / "link").symlink_to("source-target")
@@ -296,35 +297,35 @@ def test_seeding_does_not_overwrite_a_broken_destination_symlink(beebot_root):
     assert (destination / "link").readlink() == Path("missing-target")
 
 
-def test_the_role_config_never_reaches_a_workspace(beebot_root):
+def test_the_role_config_never_reaches_a_workspace(beeloop_root):
     """Only the role template is copied, so this holds by construction rather
     than by a blocklist that the next config file would outgrow."""
-    make_role(beebot_root, "configured", SEEDED, TEMPLATE)
+    make_role(beeloop_root, "configured", SEEDED, TEMPLATE)
     agent = ag.create("configured")
 
     assert (agent.cwd / "AGENTS.md").exists()
     assert not (agent.cwd / "role.toml").exists()
 
 
-def test_a_role_with_no_template_seeds_nothing_and_does_not_fail(beebot_root):
+def test_a_role_with_no_template_seeds_nothing_and_does_not_fail(beeloop_root):
     """Adding a role is a directory, and material in it is optional."""
-    make_role(beebot_root, "bare", 'backend = "fake"\ncwd = "workspaces/bare"\n')
+    make_role(beeloop_root, "bare", 'backend = "fake"\ncwd = "workspaces/bare"\n')
     agent = ag.create("bare")
 
     assert agent.cwd.is_dir()
     assert list(agent.cwd.iterdir()) == []
 
 
-def test_a_cwd_passed_in_beats_the_one_the_role_names(beebot_root):
+def test_a_cwd_passed_in_beats_the_one_the_role_names(beeloop_root):
     """The delegation decides where a worker works; the role only defaults it."""
-    make_role(beebot_root, "seeded", SEEDED, TEMPLATE)
+    make_role(beeloop_root, "seeded", SEEDED, TEMPLATE)
     agent = ag.create("seeded", cwd="workspaces/elsewhere")
 
-    assert agent.cwd == (beebot_root / "workspaces" / "elsewhere").resolve()
+    assert agent.cwd == (beeloop_root / "workspaces" / "elsewhere").resolve()
     assert (agent.cwd / "AGENTS.md").exists()
 
 
-def test_a_role_that_says_nowhere_to_work_is_refused_and_named(beebot_root):
+def test_a_role_that_says_nowhere_to_work_is_refused_and_named(beeloop_root):
     """A role directory is not a place to work, so the old fallback to it would
     seed a role with its own template and let an agent write over its config."""
     with pytest.raises(ag.AgentError, match="neither role 'worker'"):
@@ -352,10 +353,10 @@ def test_creating_an_agent_writes_the_handle_before_anything_is_spent():
     assert fake.turns(agent.agent_id) == []
 
 
-def test_an_agent_owns_its_record_and_a_snapshot_of_its_role_config(beebot_root):
+def test_an_agent_owns_its_record_and_a_snapshot_of_its_role_config(beeloop_root):
     agent = orchestrator()
     directory = records.agent_path(agent.agent_id)
-    role_config = beebot_root / "configs" / "roles" / "orchestrator" / "role.toml"
+    role_config = beeloop_root / "configs" / "roles" / "orchestrator" / "role.toml"
     copied_config = role_config.read_text("utf-8")
 
     assert records.record_path(agent.agent_id) == directory / "record.json"
@@ -366,8 +367,8 @@ def test_an_agent_owns_its_record_and_a_snapshot_of_its_role_config(beebot_root)
     assert (directory / "config.toml").read_text("utf-8") == copied_config
 
 
-def test_an_empty_role_creates_an_empty_agent_config(beebot_root):
-    directory = beebot_root / "configs" / "roles" / "empty"
+def test_an_empty_role_creates_an_empty_agent_config(beeloop_root):
+    directory = beeloop_root / "configs" / "roles" / "empty"
     directory.mkdir()
     agent = ag.create("empty", cwd="workspaces/empty")
 
@@ -432,9 +433,9 @@ def test_one_input_is_one_turn():
     assert records.read(agent.agent_id)["turns"] == 1
 
 
-def test_session_init_is_a_separate_input_on_only_the_first_turn(beebot_root):
+def test_session_init_is_a_separate_input_on_only_the_first_turn(beeloop_root):
     make_role(
-        beebot_root,
+        beeloop_root,
         "initialized",
         'backend = "fake"\ncwd = "workspaces/initialized"\n'
         "[prompts]\n"

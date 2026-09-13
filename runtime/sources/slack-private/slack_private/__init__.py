@@ -1,1 +1,1 @@
-"""Authenticated private Slack input for BeeBot."""
+"""Authenticated private Slack input for BeeLoop."""

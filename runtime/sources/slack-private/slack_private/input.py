@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from .common import (
-    beebot_root,
+    beeloop_root,
     load_runtime_state,
     load_slack_config,
     logs_dir,
@@ -24,7 +24,7 @@ LISTENER_BACKOFF_SECONDS = 30
 
 
 def main() -> int:
-    root = beebot_root()
+    root = beeloop_root()
     config = load_slack_config(root)
     try:
         validate_config(config)

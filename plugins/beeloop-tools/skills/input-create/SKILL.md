@@ -5,4 +5,5 @@ description: Create or update a BeeLoop input adapter and its source-specific ru
 
 # Create an input
 
-If you have not already, read `$BEEBOT_ROOT/inputs.d/README.md`, then follow it to create or update the input.
+Run `beeloop root`, read `<root>/inputs.d/README.md`, then follow it to create
+or update the input.

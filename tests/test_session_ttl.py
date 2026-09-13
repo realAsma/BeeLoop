@@ -6,13 +6,13 @@ import datetime as dt
 
 import pytest
 
-import beebot.agents.agent as agent_module
-from beebot import agents as ag
-from beebot import timers
-from beebot.agents import records, session_ttl
-from beebot.agents import timers as agent_timers
-from beebot.agents.backends import InputItem, fake
-from beebot.dispatch.dispatch import dispatch
+import beeloop.agents.agent as agent_module
+from beeloop import agents as ag
+from beeloop import timers
+from beeloop.agents import records, session_ttl
+from beeloop.agents import timers as agent_timers
+from beeloop.agents.backends import InputItem, fake
+from beeloop.dispatch.dispatch import dispatch
 from tests.conftest import as_fake, make_role, orchestrator, worker
 
 
@@ -54,9 +54,9 @@ def test_orchestrator_starts_with_its_role_lifecycle_timers():
     assert heartbeat.until is None
 
 
-def test_role_ttl_requires_a_supported_positive_duration(beebot_root):
+def test_role_ttl_requires_a_supported_positive_duration(beeloop_root):
     make_role(
-        beebot_root,
+        beeloop_root,
         "broken-ttl",
         'backend = "fake"\ncwd = "workspaces/broken"\n'
         "[session_ttl]\n"
@@ -115,9 +115,9 @@ def test_ttl_requires_the_typed_timer_source():
     )
 
 
-def test_custom_expiry_and_resume_prompts_are_used(beebot_root, monkeypatch):
+def test_custom_expiry_and_resume_prompts_are_used(beeloop_root, monkeypatch):
     make_role(
-        beebot_root,
+        beeloop_root,
         "custom-lifecycle",
         'backend = "fake"\ncwd = "workspaces/custom"\n'
         "[session_ttl]\n"
@@ -149,9 +149,9 @@ def test_custom_expiry_and_resume_prompts_are_used(beebot_root, monkeypatch):
     assert turns[1][1] == ["user", "continue"]
 
 
-def test_blank_expiry_prompt_disables_ttl(beebot_root):
+def test_blank_expiry_prompt_disables_ttl(beeloop_root):
     make_role(
-        beebot_root,
+        beeloop_root,
         "no-expiry",
         'backend = "fake"\ncwd = "workspaces/no-expiry"\n'
         "[session_ttl]\n"
@@ -306,11 +306,11 @@ def test_the_existing_timer_adapter_drives_session_expiry(monkeypatch):
 
 
 def test_an_armed_ttl_keeps_its_identity_after_a_role_prompt_edit(
-    beebot_root, monkeypatch
+    beeloop_root, monkeypatch
 ):
     agent = as_fake(orchestrator())
     scheduled = ttl_timer(agent)
-    role_config = beebot_root / "configs" / "roles" / "orchestrator" / "role.toml"
+    role_config = beeloop_root / "configs" / "roles" / "orchestrator" / "role.toml"
     role_config.write_text(
         "[prompts]\nsession_expire = \"new expiry words\"\n",
         encoding="utf-8",

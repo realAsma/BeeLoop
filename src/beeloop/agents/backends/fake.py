@@ -54,10 +54,9 @@ class FakeBackend(Backend):
 def log_path(agent_id: str) -> Path:
     """Where this backend writes what it was handed.
 
-    Through `root()` rather than reading BEEBOT_ROOT here, even though that
-    costs this package its leaf status: `root()` is where the variable is
-    checked, and a second reader means the fake would happily log into an
-    unset or bogus root that every other path in the tree refuses.
+    Through `root()` rather than reading configuration here, even though that
+    costs this package its leaf status: one resolver keeps the fake from
+    logging into a different deployment than every other component.
     """
     return root() / "runtime" / "fake" / f"{agent_id}.jsonl"
 

@@ -7,10 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from beebot import agents as ag
-from beebot.agents import records
+from beeloop import agents as ag
+from beeloop.agents import records
+from beeloop.config import setup_root
 
-# The source tree, for its checked-in configs and templates. Not a BEEBOT_ROOT:
+# The source tree, for its checked-in configs and templates. It is not the
+# configured root:
 # the packages come from the install, and each test gets a root of its own below.
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -48,18 +50,20 @@ def poke(agent: ag.Agent, fields: dict) -> dict:
 
 
 @pytest.fixture(autouse=True)
-def beebot_root(tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch):
-    """A whole BeeBot tree per test.
+def beeloop_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A whole BeeLoop tree per test.
 
     The roles are copied rather than pointed at, so a test that writes into a
     role directory cannot corrupt the checked-in one.
     """
-    home = Path(str(tmp_path))
+    home = tmp_path / "root"
+    user_home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(user_home))
     shutil.copytree(SOURCE / "configs", home / "configs")
     shutil.copytree(SOURCE / "templates", home / "templates")
     # Made here rather than checked in: git cannot track an empty directory,
     # and empty is the whole point -- `worker` is the role that says nothing.
     (home / "configs" / "roles" / "worker").mkdir(exist_ok=True)
     (home / "runtime").mkdir()
-    monkeypatch.setenv("BEEBOT_ROOT", str(home))
+    setup_root(home)
     return home

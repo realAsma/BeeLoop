@@ -1,4 +1,4 @@
-"""Authorized asynchronous messaging between BeeBot agents."""
+"""Authorized asynchronous messaging between BeeLoop agents."""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from beebot import agents as ag
-from beebot.agents.records import root
-from beebot.agents.roles import load_role, workspace
-from beebot.dispatch.envelope import Envelope, serialize
-from beebot.dispatch.routes import Route, RouteError, agent_for, reassign
+from beeloop import agents as ag
+from beeloop.agents.records import root
+from beeloop.agents.roles import load_role, workspace
+from beeloop.dispatch.envelope import Envelope, serialize
+from beeloop.dispatch.routes import Route, RouteError, agent_for, reassign
 
 
 class MessagingError(RuntimeError):
@@ -250,8 +250,8 @@ def _submit(envelope: Envelope) -> None:
     with open(log_path, "ab", buffering=0) as log:
         process = subprocess.Popen(
             # Use this interpreter: it has already imported the installed SDK,
-            # while PATH could select a different BeeBot installation.
-            [sys.executable, "-m", "beebot.dispatch.dispatch"],
+            # while PATH could select a different BeeLoop installation.
+            [sys.executable, "-m", "beeloop.dispatch.dispatch"],
             stdin=subprocess.PIPE,
             stdout=log,
             stderr=subprocess.STDOUT,

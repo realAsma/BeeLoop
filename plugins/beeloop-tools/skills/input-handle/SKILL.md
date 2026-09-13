@@ -12,8 +12,8 @@ For a source shaped as `<source-name>:<session-key>`:
 
 1. Split once at the first `:` and require `<source-name>` to match
    `[a-z0-9][a-z0-9-]*`.
-2. Look for
-   `$BEEBOT_ROOT/runtime/sources/<source-name>/SKILL.md`.
+2. Run `beeloop root` and look for
+   `<root>/runtime/sources/<source-name>/SKILL.md`.
 3. If found, read it completely unless already read in this retained
    conversation. Follow it and pass the complete `source` to its documented
    reply helper.

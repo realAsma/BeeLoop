@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from beebot import agents as ag
-from beebot.agents import agent as agent_impl
-from beebot.agents import records, roles
+from beeloop import agents as ag
+from beeloop.agents import agent as agent_impl
+from beeloop.agents import records, roles
 from tests.conftest import as_fake, orchestrator, poke, worker
 
 
@@ -59,7 +59,7 @@ def test_a_role_that_names_no_type_is_an_ordinary_agent():
     assert made.record["role"] == "worker"
 
 
-def test_a_role_naming_a_registered_type_builds_that_class(beebot_root):
+def test_a_role_naming_a_registered_type_builds_that_class(beeloop_root):
     """The escape hatch for behaviour that config cannot express: an envelope
     names a role, and the role says which class runs it."""
 
@@ -67,7 +67,7 @@ def test_a_role_naming_a_registered_type_builds_that_class(beebot_root):
         pass
 
     ag.register(Specialist)
-    (beebot_root / "configs" / "roles" / "worker" / "role.toml").write_text(
+    (beeloop_root / "configs" / "roles" / "worker" / "role.toml").write_text(
         'type = "Specialist"\n', encoding="utf-8"
     )
     try:
@@ -77,10 +77,10 @@ def test_a_role_naming_a_registered_type_builds_that_class(beebot_root):
         del agent_impl.REGISTRY["Specialist"]
 
 
-def test_a_role_naming_a_type_nothing_registers_is_refused_and_named(beebot_root):
+def test_a_role_naming_a_type_nothing_registers_is_refused_and_named(beeloop_root):
     """A misspelled `type = "Persistant"` must fail loudly rather than hand back
     an ordinary agent that then quietly never refreshes."""
-    (beebot_root / "configs" / "roles" / "worker" / "role.toml").write_text(
+    (beeloop_root / "configs" / "roles" / "worker" / "role.toml").write_text(
         'type = "Persistant"\n', encoding="utf-8"
     )
     with pytest.raises(ag.AgentError, match="Persistant") as raised:

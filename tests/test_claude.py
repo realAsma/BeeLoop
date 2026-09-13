@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from beebot.agents.backends import BackendError, InputItem, Session
-from beebot.agents.backends.claude import ClaudeBackend, _argv, _render
+from beeloop.agents.backends import BackendError, InputItem, Session
+from beeloop.agents.backends.claude import ClaudeBackend, _argv, _render
 
 
 def session(**kwargs) -> Session:
@@ -32,7 +32,7 @@ def session(**kwargs) -> Session:
 
 @pytest.fixture(autouse=True)
 def binary(monkeypatch):
-    monkeypatch.setenv("BEEBOT_CLAUDE_BIN", "/usr/bin/claude")
+    monkeypatch.setenv("BEELOOP_CLAUDE_BIN", "/usr/bin/claude")
 
 
 # ------------------------------------------------------------------ the argv
@@ -89,9 +89,9 @@ def test_deliver_binds_the_child_to_this_agents_own_directory(monkeypatch):
     current = session()
     ClaudeBackend().deliver(current, [InputItem("slack:D0B8:1", "hi")])
 
-    assert spawned["env"]["BEEBOT_AGENT_DIR"] == str(current.agent_dir)
+    assert spawned["env"]["BEELOOP_AGENT_DIR"] == str(current.agent_dir)
     assert current.agent_dir.name == current.agent_id
-    # Inherited, not replaced: the child needs PATH, HOME and BEEBOT_ROOT.
+    # Inherited, not replaced: the child still needs PATH and HOME.
     assert spawned["env"]["PATH"] == os.environ["PATH"]
 
 

@@ -51,7 +51,7 @@ class Session:
     prepared: bool
     # From the record, NOT the role. A worker's directory comes from its
     # delegation, and a provider may adopt whatever directory it was last
-    # invoked from -- so this is BeeBot's state, not something to infer back.
+    # invoked from -- so this is BeeLoop's state, not something to infer back.
     cwd: Path
     permissions: str  # role. A profile NAME; the adapter owns the catalog.
     options: Mapping[str, Any] = field(default_factory=dict)  # role, opaque

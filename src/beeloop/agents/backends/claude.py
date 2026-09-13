@@ -61,11 +61,11 @@ class ClaudeBackend(Backend):
             text=True,
             # The binding, and the only thing this backend tells the plugin.
             # Verified against 2.1.257: the CLI passes its own environment down
-            # to stdio MCP servers, so the loop server reads this and the
-            # inherited BEEBOT_ROOT out of it. Out-of-band on purpose -- an
+            # to stdio MCP servers, so the loop server reads this binding.
+            # Out-of-band on purpose -- an
             # argument or a prompt line would let the model inside choose whose
             # identity it sends under.
-            env={**os.environ, "BEEBOT_AGENT_DIR": str(session.agent_dir)},
+            env={**os.environ, "BEELOOP_AGENT_DIR": str(session.agent_dir)},
         )
         if done.returncode != 0:
             raise BackendError((done.stderr or done.stdout).strip())
@@ -147,10 +147,10 @@ def _argv(session: Session, prompt: str) -> list[str]:
 
 
 def _binary() -> str:
-    found = os.environ.get("BEEBOT_CLAUDE_BIN") or shutil.which("claude")
+    found = os.environ.get("BEELOOP_CLAUDE_BIN") or shutil.which("claude")
     if not found:
         raise BackendError(
-            "the `claude` CLI is not on PATH; install it or set BEEBOT_CLAUDE_BIN"
+            "the `claude` CLI is not on PATH; install it or set BEELOOP_CLAUDE_BIN"
         )
     return found
 

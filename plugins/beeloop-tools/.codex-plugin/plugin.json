@@ -12,7 +12,7 @@
       "command": "python3",
       "args": ["server.py"],
       "cwd": ".",
-      "env_vars": ["BEEBOT_AGENT_DIR", "BEEBOT_ROOT"]
+      "env_vars": ["BEELOOP_AGENT_DIR"]
     }
   },
   "interface": {

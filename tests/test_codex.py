@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from beebot.agents.backends import BackendError, InputItem, Session, get
-from beebot.agents.backends.codex import CodexBackend, _argv, _render, _result
+from beeloop.agents.backends import BackendError, InputItem, Session, get
+from beeloop.agents.backends.codex import CodexBackend, _argv, _render, _result
 
 
 def session(**kwargs) -> Session:
@@ -31,7 +31,7 @@ def session(**kwargs) -> Session:
 
 @pytest.fixture(autouse=True)
 def binary(monkeypatch):
-    monkeypatch.setenv("BEEBOT_CODEX_BIN", "/usr/bin/codex")
+    monkeypatch.setenv("BEELOOP_CODEX_BIN", "/usr/bin/codex")
 
 
 def test_codex_is_registered():
@@ -102,7 +102,7 @@ def test_deliver_binds_the_agent_and_adopts_codex_thread_id(monkeypatch):
 
     assert delivery.text == "done"
     assert delivery.updates == {"session_id": "codex-thread", "status": "active"}
-    assert spawned["env"]["BEEBOT_AGENT_DIR"] == str(current.agent_dir)
+    assert spawned["env"]["BEELOOP_AGENT_DIR"] == str(current.agent_dir)
     assert spawned["env"]["PATH"] == os.environ["PATH"]
     assert spawned["cwd"] == str(current.cwd)
 

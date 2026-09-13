@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import pytest
 
-from beebot import agents as ag
-from beebot.agents import records
-from beebot.agents.backends import InputItem, fake
+from beeloop import agents as ag
+from beeloop.agents import records
+from beeloop.agents.backends import InputItem, fake
 from tests.conftest import as_fake, worker
 
 

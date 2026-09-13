@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BEEBOT_ROOT="${BEEBOT_ROOT:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd -P)}"
-export BEEBOT_ROOT
-
-SOURCE_ROOT="$BEEBOT_ROOT/runtime/sources/slack-private"
+SOURCE_ROOT="$(beeloop root)/runtime/sources/slack-private"
 export PYTHONPATH="$SOURCE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 if command -v python_pwd >/dev/null 2>&1; then

@@ -8,13 +8,13 @@ from dataclasses import asdict
 
 import pytest
 
-import beebot.agents.agent as agent_module
-from beebot import agents as ag
-from beebot import timers
-from beebot.agents import records, session_ttl
-from beebot.agents import timers as agent_timers
-from beebot.agents.backends import InputItem, fake
-from beebot.dispatch.dispatch import dispatch
+import beeloop.agents.agent as agent_module
+from beeloop import agents as ag
+from beeloop import timers
+from beeloop.agents import records, session_ttl
+from beeloop.agents import timers as agent_timers
+from beeloop.agents.backends import InputItem, fake
+from beeloop.dispatch.dispatch import dispatch
 from tests.conftest import as_fake, make_role, orchestrator, worker
 
 
@@ -88,7 +88,7 @@ def test_recurrence_end_is_inclusive():
     assert finished == []
 
 
-def test_legacy_record_has_no_timer_field_until_its_first_timer(beebot_root):
+def test_legacy_record_has_no_timer_field_until_its_first_timer(beeloop_root):
     agent = worker()
     assert "timers" not in records.read(agent.agent_id)
     assert agent_timers.list_wakes(agent.agent_id) == []
@@ -98,14 +98,14 @@ def test_legacy_record_has_no_timer_field_until_its_first_timer(beebot_root):
     )
 
     assert records.read(agent.agent_id)["timers"] == [asdict(timer)]
-    adapter = beebot_root / "inputs.d" / agent_timers.ADAPTER_NAME
+    adapter = beeloop_root / "inputs.d" / agent_timers.ADAPTER_NAME
     assert adapter.stat().st_mode & 0o111
-    assert "beebot.agents.timers" in adapter.read_text("utf-8")
+    assert "beeloop.agents.timers" in adapter.read_text("utf-8")
 
 
-def test_role_heartbeat_arms_an_indefinite_recurring_timer(beebot_root):
+def test_role_heartbeat_arms_an_indefinite_recurring_timer(beeloop_root):
     make_role(
-        beebot_root,
+        beeloop_root,
         "heartbeat",
         'backend = "fake"\ncwd = "workspaces/heartbeat"\n'
         "[heartbeat]\n"
@@ -134,9 +134,9 @@ def test_role_heartbeat_arms_an_indefinite_recurring_timer(beebot_root):
         "[heartbeat]\nevery = \"1h\"\n[prompts]\nheartbeat = \"  \"\n",
     ],
 )
-def test_heartbeat_needs_both_schedule_and_prompt(beebot_root, config):
+def test_heartbeat_needs_both_schedule_and_prompt(beeloop_root, config):
     make_role(
-        beebot_root,
+        beeloop_root,
         "inactive-heartbeat",
         'backend = "fake"\ncwd = "workspaces/inactive"\n' + config,
     )
@@ -154,19 +154,19 @@ def test_heartbeat_needs_both_schedule_and_prompt(beebot_root, config):
         "[heartbeat]\nevery = \"1h\"\nextra = \"no\"\n",
     ],
 )
-def test_heartbeat_requires_exactly_one_positive_every(beebot_root, heartbeat):
-    make_role(beebot_root, "broken-heartbeat", heartbeat)
+def test_heartbeat_requires_exactly_one_positive_every(beeloop_root, heartbeat):
+    make_role(beeloop_root, "broken-heartbeat", heartbeat)
 
     with pytest.raises(ag.UnknownRole, match="heartbeat|positive integer"):
         ag.load_role("broken-heartbeat")
 
 
 def test_identical_heartbeat_and_expiry_prompts_keep_their_distinct_behaviors(
-    beebot_root,
+    beeloop_root,
     monkeypatch,
 ):
     make_role(
-        beebot_root,
+        beeloop_root,
         "heartbeat-ttl",
         'backend = "fake"\ncwd = "workspaces/heartbeat-ttl"\n'
         "[session_ttl]\n"
@@ -223,13 +223,13 @@ def test_agent_timer_crud_is_bound_to_its_owner():
     assert agent_timers.cancel_wake(first.agent_id, timer.timer_id) is True
 
 
-def test_shared_adapter_installation_is_idempotent(beebot_root):
+def test_shared_adapter_installation_is_idempotent(beeloop_root):
     first = worker(cwd="workspaces/first")
     second = worker(cwd="workspaces/second")
     agent_timers.create_wake(
         first.agent_id, message="first", after="1h", current=at(12)
     )
-    path = beebot_root / "inputs.d" / agent_timers.ADAPTER_NAME
+    path = beeloop_root / "inputs.d" / agent_timers.ADAPTER_NAME
     inode = path.stat().st_ino
 
     agent_timers.create_wake(
@@ -289,14 +289,14 @@ def test_stale_candidate_does_not_consume_owners_later_timer(monkeypatch):
     assert agent_timers.list_wakes(first.agent_id) == [later]
 
 
-def test_idle_malformed_and_closed_records_do_not_block_other_agents(beebot_root):
+def test_idle_malformed_and_closed_records_do_not_block_other_agents(beeloop_root):
     idle = worker(cwd="workspaces/idle")
     closed = as_fake(worker(cwd="workspaces/closed"))
     closed_timer = agent_timers.create_wake(
         closed.agent_id, message="closed", after="1h", current=at(10)
     )
     closed.close()
-    malformed = beebot_root / "runtime" / "agents" / "malformed"
+    malformed = beeloop_root / "runtime" / "agents" / "malformed"
     malformed.mkdir(parents=True)
     (malformed / "record.json").write_text("{broken", encoding="utf-8")
     active = worker(cwd="workspaces/active")
@@ -339,8 +339,8 @@ def test_closed_agent_cannot_create_a_timer():
         agent_timers.create_wake(agent.agent_id, message="late", after="1h")
 
 
-def test_malformed_valid_json_record_is_isolated(beebot_root):
-    malformed = beebot_root / "runtime" / "agents" / "malformed-json"
+def test_malformed_valid_json_record_is_isolated(beeloop_root):
+    malformed = beeloop_root / "runtime" / "agents" / "malformed-json"
     malformed.mkdir(parents=True)
     (malformed / "record.json").write_text(
         json.dumps({"status": "active", "timers": [{}]}), encoding="utf-8"

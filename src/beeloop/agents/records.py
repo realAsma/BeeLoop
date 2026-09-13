@@ -16,6 +16,8 @@ from typing import Any, Callable, Iterator, Mapping, Sequence
 
 import jsonschema
 
+from beeloop.config import ConfigError, root as configured_root
+
 from .backends import InputItem
 
 UTC = dt.timezone.utc
@@ -33,20 +35,10 @@ class UnknownAgent(AgentError):
 
 def root() -> Path:
     """Return the configured deployment root."""
-    given = os.environ.get("BEEBOT_ROOT")
-    if not given:
-        raise AgentError(
-            "BEEBOT_ROOT is not set; point it at the BeeBot deployment tree "
-            "-- the directory holding runtime/, logs/, inputs.d/, configs/ and "
-            "templates/"
-        )
-    found = Path(given)
-    if not found.is_dir():
-        raise AgentError(
-            f"BEEBOT_ROOT is set to {given!r}, which is not a directory; "
-            f"point it at the BeeBot deployment tree"
-        )
-    return found.resolve()
+    try:
+        return configured_root()
+    except ConfigError as exc:
+        raise AgentError(str(exc)) from exc
 
 
 def runtime(*parts: str) -> Path:

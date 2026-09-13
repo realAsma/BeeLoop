@@ -8,17 +8,17 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 
-from beebot import timers
-from beebot.dispatch.envelope import Envelope, serialize
+from beeloop import timers
+from beeloop.dispatch.envelope import Envelope, serialize
 
 from . import records
 from .agent import agent_class
 
-ADAPTER_NAME = "beebot-timers"
+ADAPTER_NAME = "beeloop-timers"
 ADAPTER_BODY = (
     "#!/usr/bin/env bash\n"
     "set -euo pipefail\n"
-    "exec python3 -m beebot.agents.timers\n"
+    "exec python3 -m beeloop.agents.timers\n"
 )
 
 

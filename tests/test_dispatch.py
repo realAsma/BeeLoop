@@ -8,19 +8,19 @@ from pathlib import Path
 
 import pytest
 
-from beebot import agents as ag
-from beebot.agents import records
-from beebot.agents.backends import BackendError
-import beebot.dispatch.dispatch as dsp
-import beebot.dispatch.envelope as env
-import beebot.dispatch.routes as rt
+from beeloop import agents as ag
+from beeloop.agents import records
+from beeloop.agents.backends import BackendError
+import beeloop.dispatch.dispatch as dsp
+import beeloop.dispatch.envelope as env
+import beeloop.dispatch.routes as rt
 from tests.conftest import as_fake, poke
 
 
 @pytest.fixture(autouse=True)
-def routes(beebot_root, monkeypatch):
+def routes(beeloop_root, monkeypatch):
     """Route into the per-test tree, not the checked-in one."""
-    path = beebot_root / "routes.jsonl"
+    path = beeloop_root / "routes.jsonl"
     monkeypatch.setattr(rt, "routes_path", lambda: path)
     monkeypatch.setattr(rt, "DEFAULT_ROLE", "worker")
     return path
@@ -428,9 +428,9 @@ def test_a_second_envelope_continues_the_same_agent(routes):
 
 @pytest.mark.parametrize("instance", ["", "fresh"])
 def test_ephemeral_dispatch_envelopes_create_a_new_agent_each_time(
-    routes, beebot_root, instance
+    routes, beeloop_root, instance
 ):
-    (beebot_root / "configs" / "roles" / "worker" / "role.toml").write_text(
+    (beeloop_root / "configs" / "roles" / "worker" / "role.toml").write_text(
         'backend = "fake"\n', encoding="utf-8"
     )
 

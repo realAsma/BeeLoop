@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
 
-from beebot import agents as ag
-from beebot.agents import backends
-from beebot.agents.records import runtime
-from beebot.agents.roles import load_role, workspace
-from beebot.dispatch.envelope import Envelope
+from beeloop import agents as ag
+from beeloop.agents import backends
+from beeloop.agents.records import runtime
+from beeloop.agents.roles import load_role, workspace
+from beeloop.dispatch.envelope import Envelope
 
 DEFAULT_ROLE = "orchestrator"
 KEY = ("source", "cwd", "role", "backend", "instance")

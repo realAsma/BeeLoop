@@ -21,7 +21,7 @@ BeeLoop parses each envelope and dispatches to an agent.
 - `role`: Dispatch/creation role; defaults to `orchestrator`.
 - `backend`: Optional creation backend; defaults to the role's backend.
 - `agent_id`: ID of an existing restorable agent; bypasses route lookup.
-- `cwd`: Working directory; relative paths resolve under `BEEBOT_ROOT`. Uses the role default or is required.
+- `cwd`: Working directory; relative paths resolve under the configured BeeLoop root. Uses the role default or is required.
 - `instance`: Persistence name; missing, empty, or `fresh` always creates; named
   instances reuse the latest restorable agent or create one.
 - `source`: Required external session and optional reply handle.
@@ -29,11 +29,12 @@ BeeLoop parses each envelope and dispatches to an agent.
 
 ## Contract
 
-- `$BEEBOT_ROOT/inputs.d/<source-name>` is a thin executable launcher file
-  resolving `$BEEBOT_ROOT` and invoking the substantive implementation.
+- `<beeloop-root>/inputs.d/<source-name>` is a thin executable launcher file
+  invoking the substantive implementation.
 - Keep each source's runtime under
-  `$BEEBOT_ROOT/runtime/sources/<source-name>/`.
-- Enable an input with `chmod +x "$BEEBOT_ROOT/inputs.d/<source-name>"`.
+  `<beeloop-root>/runtime/sources/<source-name>/`.
+- Find `<beeloop-root>` with `beeloop root` and enable an input with
+  `chmod +x <beeloop-root>/inputs.d/<source-name>`.
 - Emit one envelope or nothing to stdout; diagnostics go to stderr.
 - Headers use only fields above as single-line `key=value`; unknown fields are
   rejected. `msg` is last; everything after `msg=` is its body.
@@ -46,10 +47,10 @@ BeeLoop parses each envelope and dispatches to an agent.
 - Each poll, inputs validate dependencies, re-emit pending events, and own
   supported external replies; BeeLoop has no queue or automatic replies.
 - Store source credentials as `KEY=value` in
-  `$BEEBOT_ROOT/runtime/sources/<source-name>/secrets.env`; the implementation
+  `<beeloop-root>/runtime/sources/<source-name>/secrets.env`; the implementation
   loads it and reports missing required credentials without exposing values.
   Never expose credentials in envelopes, output, logs, state, or commits.
 - Reply helpers accept complete `source` and content, validate its namespace,
   own destination lookup/authentication, and report failure.
 - If agent-side handling or reply guidance is needed, put it in
-  `$BEEBOT_ROOT/runtime/sources/<source-name>/SKILL.md` with valid frontmatter.
+  `<beeloop-root>/runtime/sources/<source-name>/SKILL.md` with valid frontmatter.

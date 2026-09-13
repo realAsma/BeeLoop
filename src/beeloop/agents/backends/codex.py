@@ -43,7 +43,7 @@ class CodexBackend(Backend):
             cwd=str(session.cwd),
             capture_output=True,
             text=True,
-            env={**os.environ, "BEEBOT_AGENT_DIR": str(session.agent_dir)},
+            env={**os.environ, "BEELOOP_AGENT_DIR": str(session.agent_dir)},
         )
         if done.returncode != 0:
             message = "\n".join(
@@ -111,10 +111,10 @@ def _argv(session: Session, prompt: str) -> list[str]:
 
 
 def _binary() -> str:
-    found = os.environ.get("BEEBOT_CODEX_BIN") or shutil.which("codex")
+    found = os.environ.get("BEELOOP_CODEX_BIN") or shutil.which("codex")
     if not found:
         raise BackendError(
-            "the `codex` CLI is not on PATH; install it or set BEEBOT_CODEX_BIN"
+            "the `codex` CLI is not on PATH; install it or set BEELOOP_CODEX_BIN"
         )
     return found
 

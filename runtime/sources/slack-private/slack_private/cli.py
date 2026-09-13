@@ -13,7 +13,7 @@ from .common import (
     REQUIRED_ENV,
     SlackConfig,
     SlackPermalink,
-    beebot_root,
+    beeloop_root,
     compact_ts,
     downloads_dir,
     is_slack_download_url,
@@ -29,7 +29,7 @@ from .common import (
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Authenticated private Slack helpers for BeeBot.")
+    parser = argparse.ArgumentParser(description="Authenticated private Slack helpers for BeeLoop.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     setup_parser = subparsers.add_parser("setup", help="write credentials and verify access")
@@ -52,7 +52,7 @@ def main() -> int:
     upload_parser.add_argument("--alt-text", default="")
 
     args = parser.parse_args()
-    root = beebot_root()
+    root = beeloop_root()
     if args.command == "setup":
         result = setup(root, args.non_interactive)
     elif args.command == "fetch":
@@ -79,7 +79,7 @@ def setup(root: Path, non_interactive: bool) -> dict[str, Any]:
             if not values[name]:
                 values[name] = _prompt_secret(name)
     if importlib.util.find_spec("slack_sdk") is None:
-        raise RuntimeError("slack-sdk is not installed; install BeeBot with the slack extra")
+        raise RuntimeError("slack-sdk is not installed; install BeeLoop with the slack extra")
     preserved = write_secrets(root, values)
     config = _require_config(root)
     client = _web_client(config)
@@ -166,7 +166,7 @@ def _web_client(config: SlackConfig) -> Any:
     try:
         from slack_sdk import WebClient
     except ImportError as exc:
-        raise RuntimeError("slack-sdk is not installed; install BeeBot with the slack extra") from exc
+        raise RuntimeError("slack-sdk is not installed; install BeeLoop with the slack extra") from exc
     return WebClient(token=config.bot_token)
 
 

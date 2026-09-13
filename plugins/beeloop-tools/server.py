@@ -1,6 +1,6 @@
 """Bound MCP tools for authorized asynchronous BeeLoop messaging.
 
-The binding arrives in `BEEBOT_AGENT_DIR`, out of the model's reach. The
+The binding arrives in `BEELOOP_AGENT_DIR`, out of the model's reach. The
 messaging SDK derives the sender's identity and outbound policy from that
 directory, so making it a tool argument would let a prompt speak as another
 agent.
@@ -13,8 +13,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from beebot.agents import timers as agent_timers
-from beebot.dispatch import messaging
+from beeloop.agents import timers as agent_timers
+from beeloop.dispatch import messaging
 from mcp.server.fastmcp import FastMCP
 
 MessagingError = messaging.MessagingError
@@ -100,19 +100,17 @@ def _agent_directory() -> Path:
 
 
 def main() -> int:
-    bound = os.environ.get("BEEBOT_AGENT_DIR", "")
+    bound = os.environ.get("BEELOOP_AGENT_DIR", "")
     if not bound:
         raise MessagingError(
-            "BEEBOT_AGENT_DIR is not set; this server is spawned bound to one "
+            "BEELOOP_AGENT_DIR is not set; this server is spawned bound to one "
             "agent directory and has no meaning without it"
         )
     directory = Path(bound)
     if not directory.is_absolute():
-        raise MessagingError(f"BEEBOT_AGENT_DIR must be absolute, got {bound!r}")
+        raise MessagingError(f"BEELOOP_AGENT_DIR must be absolute, got {bound!r}")
     global AGENT_DIRECTORY
     AGENT_DIRECTORY = directory.resolve()
-    # BEEBOT_ROOT remains the inherited deployment root. Re-deriving it from
-    # the agent directory could silently make the SDK use a different tree.
     mcp.run()
     return 0
 

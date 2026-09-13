@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "beebot"
+name = "beeloop"
 version = "0.1.0"
 description = "Long-running agents that live in a directory and are addressed by letter."
 requires-python = ">=3.11"
@@ -16,16 +16,17 @@ dependencies = [
 slack = ["slack-sdk"]
 
 [project.scripts]
-beebot-dispatch = "beebot.dispatch.dispatch:main"
+beeloop = "beeloop.cli:main"
+beeloop-dispatch = "beeloop.dispatch.dispatch:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = [
-    "beebot",
-    "beebot.agents",
-    "beebot.agents.backends",
-    "beebot.dispatch",
+    "beeloop",
+    "beeloop.agents",
+    "beeloop.agents.backends",
+    "beeloop.dispatch",
 ]
 
 [tool.setuptools.package-data]
-"beebot.agents" = ["assets/*.json"]
+"beeloop.agents" = ["assets/*.json"]

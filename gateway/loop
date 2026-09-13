@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The poll loop: the front door of BeeBot.
+# The poll loop: the front door of BeeLoop.
 #
 # Every INTERVAL seconds it runs each executable in inputs.d/. An adapter that
 # has nothing to report prints nothing; one that does prints a single envelope
@@ -14,25 +14,19 @@
 
 set -euo pipefail
 
-# Set once here, for the whole tree: the dispatcher and every adapter inherit
-# it rather than each deriving a root of its own. Deriving it from this file is
-# the fallback and not the rule -- this file is deployment state and does sit in
-# the tree it names, but an operator running several trees says so by exporting
-# BEEBOT_ROOT, and that has to win.
-BEEBOT_ROOT="${BEEBOT_ROOT:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd -P)}"
-export BEEBOT_ROOT
+ROOT="$(beeloop root)"
 # Off PATH, not out of the tree. The dispatcher is installed code and this file
-# is deployment state; building its path from BEEBOT_ROOT said the two live in
+# is deployment state; building its path from ROOT said the two live in
 # one directory, which was true only in a single checkout run from itself.
-DISPATCH="beebot-dispatch"
-INTERVAL="${BEEBOT_INPUT_INTERVAL:-1}"
+DISPATCH="beeloop-dispatch"
+INTERVAL="${BEELOOP_INPUT_INTERVAL:-1}"
 
-mkdir -p "$BEEBOT_ROOT/inputs.d" "$BEEBOT_ROOT/logs"
+mkdir -p "$ROOT/inputs.d" "$ROOT/logs"
 shopt -s nullglob
 
 log() {
   printf '[%s] loop: %s\n' "$(date -Is)" "$1" \
-    | tee -a "$BEEBOT_ROOT/logs/loop.log" >&2
+    | tee -a "$ROOT/logs/loop.log" >&2
 }
 
 # Checked once, here. Every dispatch runs backgrounded inside a pipeline, where
@@ -43,10 +37,10 @@ if ! command -v "$DISPATCH" >/dev/null 2>&1; then
   exit 1
 fi
 
-log "started; root=$BEEBOT_ROOT interval=${INTERVAL}s dispatch=$DISPATCH"
+log "started; root=$ROOT interval=${INTERVAL}s dispatch=$DISPATCH"
 
 while true; do
-  for input in "$BEEBOT_ROOT/inputs.d"/*; do
+  for input in "$ROOT/inputs.d"/*; do
     # Only executables run. README.md and *.sample are mode 644 and so are
     # invisible here -- chmod +x is the enable switch for an adapter.
     [[ -f "$input" && -x "$input" ]] || continue
@@ -54,7 +48,7 @@ while true; do
 
     # A failing adapter is logged and skipped. `set -e` must not kill the loop
     # over one bad input, hence the `if !` guard rather than a bare call.
-    if ! envelope="$("$input" 2>>"$BEEBOT_ROOT/logs/inputs.log")"; then
+    if ! envelope="$("$input" 2>>"$ROOT/logs/inputs.log")"; then
       log "input failed: $name"
       continue
     fi
@@ -67,7 +61,7 @@ while true; do
 
     log "input fired: $name"
     printf '%s' "$envelope" \
-      | "$DISPATCH" >>"$BEEBOT_ROOT/logs/dispatch.log" 2>&1 &
+      | "$DISPATCH" >>"$ROOT/logs/dispatch.log" 2>&1 &
   done
   sleep "$INTERVAL"
 done

@@ -8,13 +8,13 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
-from beebot import timers
+from beeloop import timers
 
 from . import records
 from .backends import InputItem
 
 EXPIRY_MESSAGE = (
-    "The TTL for this session has expired. Save the current work to BeeBot "
+    "The TTL for this session has expired. Save the current work to BeeLoop "
     "State, then return the saved work name and a concise continuation handoff."
 )
 RESUME_MESSAGE = (

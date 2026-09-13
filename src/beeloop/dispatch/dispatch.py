@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import sys
 
-from beebot import agents as ag
-from beebot.agents.backends import InputItem
-from beebot.dispatch.envelope import Envelope, parse
-from beebot.dispatch.routes import Route, agent_for
+from beeloop import agents as ag
+from beeloop.agents.backends import InputItem
+from beeloop.dispatch.envelope import Envelope, parse
+from beeloop.dispatch.routes import Route, agent_for
 
 
 def dispatch(envelope: Envelope) -> str:

@@ -15,13 +15,13 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-import beebot.dispatch.dispatch as dsp
-from beebot import agents as ag
-from beebot.agents import records
-from beebot.agents.backends import fake
-from beebot.dispatch import messaging
-from beebot.dispatch.envelope import Envelope
-from beebot.dispatch.routes import Route
+import beeloop.dispatch.dispatch as dsp
+from beeloop import agents as ag
+from beeloop.agents import records
+from beeloop.agents.backends import fake
+from beeloop.dispatch import messaging
+from beeloop.dispatch.envelope import Envelope
+from beeloop.dispatch.routes import Route
 from tests.conftest import as_fake, make_role, orchestrator
 
 # Loaded by path, because that is how the tool loads it. `plugins/` is not a
@@ -106,7 +106,7 @@ def test_the_live_server_exposes_the_bound_messaging_and_timer_tools():
             args=[str(SERVER_PATH)],
             env={
                 **os.environ,
-                "BEEBOT_AGENT_DIR": str(records.agent_path(agent.agent_id).resolve()),
+                "BEELOOP_AGENT_DIR": str(records.agent_path(agent.agent_id).resolve()),
             },
         )
         async with stdio_client(parameters) as streams:
@@ -142,9 +142,9 @@ def test_the_live_server_exposes_the_bound_messaging_and_timer_tools():
     assert identity.content[0].text == agent.agent_id
 
 
-def test_create_agent_is_authorized_and_does_not_dispatch(beebot_root, monkeypatch):
+def test_create_agent_is_authorized_and_does_not_dispatch(beeloop_root, monkeypatch):
     make_role(
-        beebot_root,
+        beeloop_root,
         "target",
         'backend = "fake"\ncwd = "workspaces/target"\n',
     )
@@ -159,15 +159,15 @@ def test_create_agent_is_authorized_and_does_not_dispatch(beebot_root, monkeypat
     assert result == {
         "agent_id": created.agent_id,
         "role": "target",
-        "cwd": str((beebot_root / "workspaces" / "target").resolve()),
+        "cwd": str((beeloop_root / "workspaces" / "target").resolve()),
     }
     assert created.record["turns"] == 0
     assert fake.turns(created.agent_id) == []
 
 
-def test_create_agent_requires_role_creation_permission(beebot_root):
+def test_create_agent_requires_role_creation_permission(beeloop_root):
     make_role(
-        beebot_root,
+        beeloop_root,
         "target",
         'backend = "fake"\ncwd = "workspaces/target"\n',
     )
@@ -192,23 +192,23 @@ def test_the_plugin_definitions_bind_each_tools_stdio_environment():
     codex_server = codex["mcpServers"]["beeloop-tools"]
     assert codex_server["args"] == ["server.py"]
     assert codex_server["cwd"] == "."
-    assert codex_server["env_vars"] == ["BEEBOT_AGENT_DIR", "BEEBOT_ROOT"]
+    assert codex_server["env_vars"] == ["BEELOOP_AGENT_DIR"]
 
 
 def test_the_binding_comes_from_the_environment_and_must_be_absolute(monkeypatch):
     """The binding is the identity, so a missing or relative one is refused
     before the server can answer a single call under nobody's name."""
     agent = orchestrator()
-    monkeypatch.delenv("BEEBOT_AGENT_DIR", raising=False)
-    with pytest.raises(server.MessagingError, match="BEEBOT_AGENT_DIR is not set"):
+    monkeypatch.delenv("BEELOOP_AGENT_DIR", raising=False)
+    with pytest.raises(server.MessagingError, match="BEELOOP_AGENT_DIR is not set"):
         server.main()
 
-    monkeypatch.setenv("BEEBOT_AGENT_DIR", "runtime/agents/whoever")
+    monkeypatch.setenv("BEELOOP_AGENT_DIR", "runtime/agents/whoever")
     with pytest.raises(server.MessagingError, match="must be absolute"):
         server.main()
 
     directory = records.agent_path(agent.agent_id).resolve()
-    monkeypatch.setenv("BEEBOT_AGENT_DIR", str(directory))
+    monkeypatch.setenv("BEELOOP_AGENT_DIR", str(directory))
     monkeypatch.setattr(server.mcp, "run", lambda: None)
     assert server.main() == 0
     assert server.AGENT_DIRECTORY == directory
@@ -533,9 +533,9 @@ def test_an_exact_unknown_id_is_refused():
 @pytest.mark.parametrize(
     "ids", [["*"], ["0198ff2a-0000-7000-8000-000000000000"]]
 )
-def test_route_creation_requires_an_allowed_role(beebot_root, monkeypatch, ids):
+def test_route_creation_requires_an_allowed_role(beeloop_root, monkeypatch, ids):
     make_role(
-        beebot_root,
+        beeloop_root,
         "target",
         'backend = "fake"\ncwd = "workspaces/target"\n',
     )
@@ -545,7 +545,7 @@ def test_route_creation_requires_an_allowed_role(beebot_root, monkeypatch, ids):
     monkeypatch.setattr(messaging, "_submit", lambda *args: None)
     route = Route(
         source=f"agent:{sender.agent_id}",
-        cwd=str((beebot_root / "workspaces" / "target").resolve()),
+        cwd=str((beeloop_root / "workspaces" / "target").resolve()),
         role="target",
         backend="fake",
         instance="one",
@@ -572,10 +572,10 @@ def test_route_creation_requires_an_allowed_role(beebot_root, monkeypatch, ids):
 
 @pytest.mark.parametrize("instance", [None, "", "fresh"])
 def test_ephemeral_message_routes_create_a_new_agent_each_time(
-    beebot_root, monkeypatch, instance
+    beeloop_root, monkeypatch, instance
 ):
     make_role(
-        beebot_root,
+        beeloop_root,
         "target",
         'backend = "fake"\ncwd = "workspaces/target"\n',
     )
@@ -598,10 +598,10 @@ def test_ephemeral_message_routes_create_a_new_agent_each_time(
 
 
 def test_fresh_message_routes_require_role_creation_permission(
-    beebot_root, monkeypatch
+    beeloop_root, monkeypatch
 ):
     make_role(
-        beebot_root,
+        beeloop_root,
         "target",
         'backend = "fake"\ncwd = "workspaces/target"\n',
     )
@@ -616,9 +616,9 @@ def test_fresh_message_routes_require_role_creation_permission(
     assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
 
 
-def test_named_message_routes_reuse_and_remain_distinct(beebot_root, monkeypatch):
+def test_named_message_routes_reuse_and_remain_distinct(beeloop_root, monkeypatch):
     make_role(
-        beebot_root,
+        beeloop_root,
         "target",
         'backend = "fake"\ncwd = "workspaces/target"\n',
     )
@@ -637,9 +637,9 @@ def test_named_message_routes_reuse_and_remain_distinct(beebot_root, monkeypatch
     assert recipient_ids[0] != recipient_ids[1]
 
 
-def test_message_route_uses_the_shared_authorized_creator(beebot_root, monkeypatch):
+def test_message_route_uses_the_shared_authorized_creator(beeloop_root, monkeypatch):
     make_role(
-        beebot_root,
+        beeloop_root,
         "target",
         'backend = "fake"\ncwd = "workspaces/target"\n',
     )
@@ -661,7 +661,7 @@ def test_message_route_uses_the_shared_authorized_creator(beebot_root, monkeypat
     assert len(calls) == 1
     assert calls[0][0][1:] == ("target",)
     assert calls[0][1] == {
-        "cwd": str((beebot_root / "workspaces" / "target").resolve()),
+        "cwd": str((beeloop_root / "workspaces" / "target").resolve()),
         "backend": "fake",
         "instance": "named",
     }

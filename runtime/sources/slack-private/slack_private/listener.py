@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .common import (
-    beebot_root,
+    beeloop_root,
     enqueue_authenticated_record,
     event_was_seen,
     load_slack_config,
@@ -160,7 +160,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=None)
     args = parser.parse_args()
-    return run_listener((args.root or beebot_root()).resolve())
+    return run_listener((args.root or beeloop_root()).resolve())
 
 
 if __name__ == "__main__":

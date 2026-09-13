@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping
 from urllib.parse import parse_qs, urlparse
 
+from beeloop.config import root as beeloop_root
+
 
 SOURCE_NAME = "slack-private"
 REQUIRED_ENV = ("SLACK_APP_TOKEN", "SLACK_BOT_TOKEN", "SLACK_ALLOWED_USER_ID")
@@ -52,13 +54,6 @@ class SlackSource:
     value: str
     channel: str
     thread_ts: str
-
-
-def beebot_root() -> Path:
-    value = os.environ.get("BEEBOT_ROOT")
-    if not value:
-        raise RuntimeError("BEEBOT_ROOT is required")
-    return Path(value).expanduser().resolve()
 
 
 def source_root(root: Path) -> Path:

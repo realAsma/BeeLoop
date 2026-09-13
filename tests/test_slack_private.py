@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from beebot.dispatch.envelope import parse as parse_envelope
+from beeloop.dispatch.envelope import parse as parse_envelope
 
 
 SOURCE_ROOT = Path(__file__).parents[1] / "runtime" / "sources" / "slack-private"
