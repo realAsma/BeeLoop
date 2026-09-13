@@ -18,11 +18,11 @@ cp -a templates/orchestrator/. workspaces/orchestrator/
 <details>
 <summary>Claude setup</summary>
 
-```text
-/plugin marketplace add ./state_store
-/plugin install beeloop-state@beeloop-state
-/plugin marketplace add .
-/plugin install beeloop-tools@beeloop-tools
+```sh
+claude plugin marketplace add ./state_store
+claude plugin install beeloop-state@beeloop-state
+claude plugin marketplace add .
+claude plugin install beeloop-tools@beeloop-tools
 ```
 
 </details>

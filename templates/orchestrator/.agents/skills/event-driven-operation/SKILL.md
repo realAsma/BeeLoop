@@ -11,7 +11,7 @@ when the state changes.
 
 ## Operating procedure
 
-- Read and follow the `beeloop-tools:input-adapters` skill to create or update a
+- Read and follow the `beeloop-tools:input-create` skill to create or update a
   reusable input.
 - A monitor may track multiple jobs, including worker-started ones. Keep owner agent
   IDs, identifiers, and log locations.
