@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from beebot.dispatch.envelope import parse as parse_envelope
+
 
 SOURCE_ROOT = Path(__file__).parents[1] / "runtime" / "sources" / "slack-private"
 sys.path.insert(0, str(SOURCE_ROOT))
@@ -28,9 +30,6 @@ from slack_private.common import (  # noqa: E402
 )
 from slack_private.input import format_envelope  # noqa: E402
 from slack_private.listener import SlackIdentity, validate_events_api_payload  # noqa: E402
-
-from beebot.dispatch.envelope import parse as parse_envelope
-
 
 IDENTITY = SlackIdentity(team_id="T123", bot_user_id="UBOT")
 
