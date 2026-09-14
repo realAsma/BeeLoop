@@ -406,6 +406,18 @@ def test_an_envelope_no_role_can_place_is_refused_at_the_key(routes):
         key(role="worker", cwd="")
 
 
+def test_orchestrator_default_places_an_envelope_without_a_cwd(beeloop_root):
+    route = key(
+        role="orchestrator",
+        cwd="",
+        source="slack-private:D123:1712345678901234",
+    )
+
+    assert route.cwd == str(
+        (beeloop_root / "workspaces" / "orchestrator").resolve()
+    )
+
+
 # ---------------------------------------------------------------- dispatching
 
 

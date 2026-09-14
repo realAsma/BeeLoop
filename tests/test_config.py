@@ -98,6 +98,11 @@ def test_full_setup_configures_loop_and_state(tmp_path: Path, monkeypatch):
         state_config_path().read_text("utf-8")
     ) == {"state_dir": str(states.resolve())}
     assert states.is_dir()
+    timer_adapter = deployment / "inputs.d" / "beeloop-timers"
+    assert timer_adapter.stat().st_mode & 0o111
+    assert timer_adapter.read_text("utf-8").endswith(
+        "exec python3 -m beeloop.agents.timers\n"
+    )
 
 
 def test_omitted_state_dir_preserves_existing_configuration(tmp_path: Path, monkeypatch):

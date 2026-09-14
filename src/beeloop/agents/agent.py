@@ -119,12 +119,6 @@ class Agent:
             role_config.read_text("utf-8") if role_config.exists() else "",
         )
         write(record, cls.SCHEMA)
-        if (role.session_ttl is not None and expiry_prompt is not None) or (
-            heartbeat_prompt is not None and role.heartbeat is not None
-        ):
-            from . import timers as agent_timers
-
-            agent_timers.install_adapter()
         return record
 
     def _update(
@@ -286,10 +280,6 @@ class Agent:
             )
 
         self.record = records.modify(self.agent_id, self.SCHEMA, wake)
-        if self.ttl_policy is not None and expiry_prompt is not None:
-            from . import timers as agent_timers
-
-            agent_timers.install_adapter()
 
         handoff = session_ttl.read_handoff(self.agent_id)
         batch = (

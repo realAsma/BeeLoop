@@ -48,7 +48,6 @@ def create_wake(
         )
         stored = _load_timers(record)
         record["timers"] = [asdict(item) for item in timers.ordered([*stored, timer])]
-        install_adapter()
         records.write(record, _schema(record))
     return timer
 
@@ -77,8 +76,8 @@ def cancel_wake(agent_id: str, timer_id: str) -> bool:
         return removed
 
 
-def install_adapter() -> Path:
-    path = records.root() / "inputs.d" / ADAPTER_NAME
+def install_adapter(root: Path) -> Path:
+    path = root / "inputs.d" / ADAPTER_NAME
     if not path.exists() or path.read_text("utf-8") != ADAPTER_BODY:
         records.write_file(path, ADAPTER_BODY)
     path.chmod(0o755)

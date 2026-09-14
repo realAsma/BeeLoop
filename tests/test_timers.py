@@ -98,9 +98,7 @@ def test_legacy_record_has_no_timer_field_until_its_first_timer(beeloop_root):
     )
 
     assert records.read(agent.agent_id)["timers"] == [asdict(timer)]
-    adapter = beeloop_root / "inputs.d" / agent_timers.ADAPTER_NAME
-    assert adapter.stat().st_mode & 0o111
-    assert "beeloop.agents.timers" in adapter.read_text("utf-8")
+    assert not (beeloop_root / "inputs.d" / agent_timers.ADAPTER_NAME).exists()
 
 
 def test_role_heartbeat_arms_an_indefinite_recurring_timer(beeloop_root):
@@ -221,22 +219,6 @@ def test_agent_timer_crud_is_bound_to_its_owner():
     assert agent_timers.cancel_wake(second.agent_id, timer.timer_id) is False
     assert agent_timers.list_wakes(first.agent_id) == [timer]
     assert agent_timers.cancel_wake(first.agent_id, timer.timer_id) is True
-
-
-def test_shared_adapter_installation_is_idempotent(beeloop_root):
-    first = worker(cwd="workspaces/first")
-    second = worker(cwd="workspaces/second")
-    agent_timers.create_wake(
-        first.agent_id, message="first", after="1h", current=at(12)
-    )
-    path = beeloop_root / "inputs.d" / agent_timers.ADAPTER_NAME
-    inode = path.stat().st_ino
-
-    agent_timers.create_wake(
-        second.agent_id, message="second", after="1h", current=at(12)
-    )
-
-    assert path.stat().st_ino == inode
 
 
 def test_poll_emits_only_the_globally_earliest_direct_envelope():

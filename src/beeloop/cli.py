@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .agents.timers import install_adapter as install_timer_adapter
 from .config import ConfigError, root as configured_root, setup_root, setup_state_dir
 
 
@@ -29,7 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root = setup_root(args.root)
         state_dir = setup_state_dir(args.state_dir)
-    except ConfigError as exc:
+        install_timer_adapter(root)
+    except (ConfigError, OSError) as exc:
         print(f"beeloop: {exc}", file=sys.stderr)
         return 2
     print(f"BeeLoop root: {root}")

@@ -77,21 +77,21 @@ def test_an_empty_directory_is_a_working_role(beeloop_root):
 
 
 @pytest.mark.parametrize(
-    ("name", "backend", "permissions"),
+    ("name", "backend", "permissions", "cwd"),
     [
-        ("orchestrator", "codex", "approve_for_me"),
-        ("worker", "claude_code", "approve_for_me"),
-        ("planner", "claude_code", "read"),
+        ("orchestrator", "codex", "approve_for_me", "workspaces/orchestrator"),
+        ("worker", "claude_code", "approve_for_me", None),
+        ("planner", "claude_code", "read", None),
     ],
 )
 def test_checked_in_roles_select_their_backend_and_permissions(
-    name, backend, permissions
+    name, backend, permissions, cwd
 ):
     role = ag.load_role(name)
 
     assert role.backend == backend
     assert role.permissions == permissions
-    assert role.cwd is None
+    assert role.cwd == ((records.root() / cwd).resolve() if cwd else None)
 
 
 def test_a_missing_role_names_the_directory_it_wanted():
@@ -157,11 +157,11 @@ def test_a_broken_role_config_names_the_file_instead_of_leaking_a_parse_error(be
         ag.load_role("worker")
 
 
-def test_orchestrator_role_defines_its_lifecycle_flows():
+def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
     role = ag.load_role("orchestrator")
     config = tomllib.loads((role.directory / "role.toml").read_text("utf-8"))
 
-    assert role.cwd is None
+    assert role.cwd == (beeloop_root / "workspaces" / "orchestrator").resolve()
     assert role.session_ttl == session_ttl.Policy(
         idle_seconds=3600, max_age_seconds=86400
     )
