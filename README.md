@@ -7,7 +7,6 @@ BeeLoop runs long-lived, directory-backed agents that receive events and message
 ```sh
 git clone git@github.com:realAsma/BeeLoop-State.git state_store
 python3 -m pip install -e .
-ln -s "$PWD/state_store/beeloop-state" ~/.local/bin/beeloop-state
 beeloop setup --root "$PWD"
 codex plugin marketplace add ./state_store
 codex plugin add beeloop-state@beeloop-state

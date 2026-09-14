@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import tomllib
 from pathlib import Path
@@ -10,7 +9,15 @@ from pathlib import Path
 import pytest
 
 from beeloop import cli
-from beeloop.config import ConfigError, ROOT_DIRECTORIES, config_path, root, setup_root
+from beeloop.config import (
+    ConfigError,
+    ROOT_DIRECTORIES,
+    config_path,
+    root,
+    setup_root,
+    setup_state_dir,
+    state_config_path,
+)
 
 
 def test_setup_stores_an_absolute_root_and_prepares_the_tree(
@@ -77,14 +84,10 @@ def test_config_requires_an_absolute_root(tmp_path: Path, monkeypatch, body: str
 
 
 def test_full_setup_configures_loop_and_state(tmp_path: Path, monkeypatch):
-    project = Path(__file__).resolve().parents[1]
     home = tmp_path / "home"
     deployment = tmp_path / "deployment"
     states = tmp_path / "states"
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv(
-        "PATH", f"{project / 'state_store'}{os.pathsep}{os.environ['PATH']}"
-    )
 
     assert cli.main(
         ["setup", "--root", str(deployment), "--state-dir", str(states)]
@@ -92,15 +95,34 @@ def test_full_setup_configures_loop_and_state(tmp_path: Path, monkeypatch):
 
     assert root() == deployment.resolve()
     assert tomllib.loads(
-        (home / ".config" / "beeloop" / "state.toml").read_text("utf-8")
+        state_config_path().read_text("utf-8")
     ) == {"state_dir": str(states.resolve())}
-    assert (states / "schema.json").is_file()
-    assert (states / "index.jsonl").is_file()
+    assert states.is_dir()
 
 
-def test_full_setup_reports_a_missing_state_executable(tmp_path: Path, monkeypatch, capsys):
+def test_omitted_state_dir_preserves_existing_configuration(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.setattr(cli.shutil, "which", lambda _: None)
+    selected = setup_state_dir(tmp_path / "states")
 
-    assert cli.main(["setup", "--root", str(tmp_path / "root")]) == 2
-    assert "beeloop-state" in capsys.readouterr().err
+    assert setup_state_dir() == selected
+    assert tomllib.loads(state_config_path().read_text("utf-8")) == {
+        "state_dir": str(selected)
+    }
+
+
+def test_explicit_state_dir_overwrites_configuration(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    setup_state_dir(tmp_path / "first")
+
+    selected = setup_state_dir(tmp_path / "second")
+
+    assert tomllib.loads(state_config_path().read_text("utf-8")) == {
+        "state_dir": str(selected)
+    }
+
+
+def test_missing_state_config_uses_default(tmp_path: Path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+
+    assert setup_state_dir() == (home / ".beeloop_states").resolve()

@@ -1,4 +1,4 @@
-"""Authorized asynchronous messaging between BeeLoop agents."""
+"""Asynchronous messaging for BeeLoop agents and direct-user sessions."""
 
 from __future__ import annotations
 
@@ -40,6 +40,8 @@ class AllowedReceivers:
 
 
 ROUTE_FIELDS = frozenset({"role", "cwd", "instance"})
+DIRECT_SOURCE = "user:direct"
+DIRECT_RECEIVERS = AllowedReceivers(frozenset({"*"}), frozenset())
 
 
 def agent_id(sender_directory: Path) -> str:
@@ -48,12 +50,12 @@ def agent_id(sender_directory: Path) -> str:
 
 
 def create_agent(
-    sender_directory: Path,
+    sender_directory: Path | None,
     role: str,
     cwd: str | None = None,
 ) -> dict[str, str]:
     """Authorize and create an agent without dispatching a turn."""
-    allowed = _allowed_receivers(sender_directory / "config.toml")
+    allowed = _receiver_policy(sender_directory)
     created = _create(allowed, role, cwd=cwd)
     return {
         "agent_id": created.agent_id,
@@ -63,23 +65,29 @@ def create_agent(
 
 
 def send(
-    sender_directory: Path,
+    sender_directory: Path | None,
     receiver: str | dict[str, Any],
     msg: str,
 ) -> dict[str, str]:
-    """Authorize and asynchronously submit one agent-to-agent message."""
+    """Authorize and asynchronously submit one message."""
     if not msg.strip():
         raise MessagingError("msg must not be empty")
 
-    sender = _identity(sender_directory)
-    allowed = _allowed_receivers(sender_directory / "config.toml")
-    recipient = _resolve(receiver, sender, allowed)
+    if sender_directory is None:
+        sender_id = DIRECT_SOURCE
+        source = DIRECT_SOURCE
+    else:
+        sender_id = _identity(sender_directory)["agent_id"]
+        source = f"agent:{sender_id}"
+    recipient = _resolve(
+        receiver, sender_id, source, _receiver_policy(sender_directory)
+    )
 
     _submit(
         Envelope(
             role=None,
             agent_id=recipient.agent_id,
-            source=f"agent:{sender['agent_id']}",
+            source=source,
             msg=msg,
         )
     )
@@ -87,6 +95,7 @@ def send(
         "status": "accepted",
         "receiver_agent_id": recipient.agent_id,
         "receiver_role": recipient.record["role"],
+        "receiver_cwd": str(recipient.cwd),
     }
 
 
@@ -167,6 +176,12 @@ def _allowed_receivers(path: Path) -> AllowedReceivers:
     return AllowedReceivers(frozenset(roles), frozenset(ids))
 
 
+def _receiver_policy(sender_directory: Path | None) -> AllowedReceivers:
+    if sender_directory is None:
+        return DIRECT_RECEIVERS
+    return _allowed_receivers(sender_directory / "config.toml")
+
+
 def _string_list(value: Any, path: Path, field: str) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise MessagingError(
@@ -177,13 +192,14 @@ def _string_list(value: Any, path: Path, field: str) -> list[str]:
 
 def _resolve(
     receiver: str | dict[str, Any],
-    sender: dict[str, str],
+    sender_id: str,
+    source: str,
     allowed: AllowedReceivers,
 ) -> ag.Agent:
     if isinstance(receiver, str):
         recipient = ag.restore(receiver)
     elif isinstance(receiver, dict):
-        route = _route(receiver, sender["agent_id"])
+        route = _route(receiver, source)
         existing = route.resolve()
         recipient = _restore(existing) if existing else None
         if recipient is None:
@@ -197,7 +213,7 @@ def _resolve(
 
     if not allowed.allows(recipient.record["role"], recipient.agent_id):
         raise MessagingError(
-            f"agent {sender['agent_id']!r} may not send to role "
+            f"agent {sender_id!r} may not send to role "
             f"{recipient.record['role']!r} or agent {recipient.agent_id!r}"
         )
     return recipient
@@ -214,7 +230,7 @@ def _create(
     return ag.create(role, cwd=cwd, **record)
 
 
-def _route(receiver: dict[str, Any], sender_id: str) -> Route:
+def _route(receiver: dict[str, Any], source: str) -> Route:
     if unknown := receiver.keys() - ROUTE_FIELDS:
         raise MessagingError(
             f"unknown receiver route field(s): {', '.join(sorted(unknown))}"
@@ -227,7 +243,7 @@ def _route(receiver: dict[str, Any], sender_id: str) -> Route:
             raise MessagingError(f"receiver route {field} must be a string")
     configured = load_role(role)
     return Route(
-        source=f"agent:{sender_id}",
+        source=source,
         cwd=str(workspace(configured, receiver.get("cwd"))),
         role=role,
         backend=configured.backend,

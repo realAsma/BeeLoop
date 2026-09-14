@@ -1,6 +1,6 @@
 {
   "name": "beeloop-tools",
-  "version": "1.0.0",
+  "version": "1.0.0+codex.20260914124004",
   "description": "Asynchronous messaging, source routing, and wake timers for BeeLoop agents.",
   "author": {
     "name": "BeeLoop"
@@ -10,18 +10,26 @@
     "beeloop-tools": {
       "type": "stdio",
       "command": "python3",
-      "args": ["server.py"],
+      "args": [
+        "server.py"
+      ],
       "cwd": ".",
-      "env_vars": ["BEELOOP_AGENT_DIR"]
+      "env_vars": [
+        "BEELOOP_AGENT_DIR"
+      ]
     }
   },
   "interface": {
     "displayName": "BeeLoop Tools",
     "shortDescription": "Message agents, route sources, and schedule wake timers.",
-    "longDescription": "Send asynchronous messages, route owned sources between explicitly authorized BeeLoop agents, and schedule bound wake timers.",
+    "longDescription": "Send asynchronous messages, route sources between explicitly authorized BeeLoop agents, and schedule bound wake timers.",
     "developerName": "BeeLoop",
     "category": "Productivity",
-    "capabilities": ["Write"],
-    "defaultPrompt": ["Send a message, route a source, or schedule a wake timer."]
+    "capabilities": [
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Send a message, route a source, or schedule a wake timer."
+    ]
   }
 }

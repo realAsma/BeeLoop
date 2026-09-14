@@ -1,9 +1,7 @@
-"""Bound MCP tools for authorized asynchronous BeeLoop messaging.
+"""MCP tools for asynchronous BeeLoop messaging.
 
-The binding arrives in `BEELOOP_AGENT_DIR`, out of the model's reach. The
-messaging SDK derives the sender's identity and outbound policy from that
-directory, so making it a tool argument would let a prompt speak as another
-agent.
+When present, `BEELOOP_AGENT_DIR` binds calls to a harness-managed agent.
+Without it, creation and messaging are trusted direct-user operations.
 """
 
 from __future__ import annotations
@@ -14,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from beeloop.agents import timers as agent_timers
+from beeloop.config import root as configured_root
 from beeloop.dispatch import messaging
 from mcp.server.fastmcp import FastMCP
 
@@ -22,20 +21,26 @@ MessagingError = messaging.MessagingError
 AGENT_DIRECTORY: Path | None = None
 mcp = FastMCP(
     "beeloop-tools",
-    instructions="Bound messaging, source routing, and wake timers for BeeLoop agents.",
+    instructions="Messaging for BeeLoop agents and trusted direct-user sessions.",
 )
 
 
 @mcp.tool()
-def get_agent_id() -> str:
-    """Return this agent's stable BeeLoop ID."""
-    return messaging.agent_id(_agent_directory())
+def get_agent_id() -> str | None:
+    """Return this agent's ID, or None outside the BeeLoop harness."""
+    return messaging.agent_id(AGENT_DIRECTORY) if AGENT_DIRECTORY else None
+
+
+@mcp.tool()
+def get_beeloop_root() -> str:
+    """Return the configured absolute BeeLoop root."""
+    return str(configured_root())
 
 
 @mcp.tool()
 def create_agent(role: str, cwd: str | None = None) -> dict[str, str]:
     """Create an authorized agent without starting its first model turn."""
-    return messaging.create_agent(_agent_directory(), role, cwd)
+    return messaging.create_agent(AGENT_DIRECTORY, role, cwd)
 
 
 @mcp.tool()
@@ -48,7 +53,7 @@ def message(receiver: str | dict[str, Any], msg: str) -> dict[str, str]:
     An accepted result identifies the resolved receiver and confirms background
     dispatch, not model completion.
     """
-    return messaging.send(_agent_directory(), receiver, msg)
+    return messaging.send(AGENT_DIRECTORY, receiver, msg)
 
 
 @mcp.tool()
@@ -95,22 +100,19 @@ def timer_cancel(timer_id: str) -> str:
 
 def _agent_directory() -> Path:
     if AGENT_DIRECTORY is None:
-        raise MessagingError("the messaging server is not bound to an agent directory")
+        raise MessagingError("requires a bound BeeLoop agent")
     return AGENT_DIRECTORY
 
 
 def main() -> int:
     bound = os.environ.get("BEELOOP_AGENT_DIR", "")
-    if not bound:
-        raise MessagingError(
-            "BEELOOP_AGENT_DIR is not set; this server is spawned bound to one "
-            "agent directory and has no meaning without it"
-        )
-    directory = Path(bound)
-    if not directory.is_absolute():
-        raise MessagingError(f"BEELOOP_AGENT_DIR must be absolute, got {bound!r}")
     global AGENT_DIRECTORY
-    AGENT_DIRECTORY = directory.resolve()
+    AGENT_DIRECTORY = None
+    if bound:
+        directory = Path(bound)
+        if not directory.is_absolute():
+            raise MessagingError(f"BEELOOP_AGENT_DIR must be absolute, got {bound!r}")
+        AGENT_DIRECTORY = directory.resolve()
     mcp.run()
     return 0
 

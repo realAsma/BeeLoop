@@ -185,8 +185,24 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
     canonical = role.template / ".agents" / "skills"
     source_template = SOURCE / "templates" / "orchestrator"
     instructions = (source_template / "AGENTS.md").read_text(encoding="utf-8")
+    first_turn = (canonical / "orchestrator-first-turn" / "SKILL.md").read_text()
+    outside = (canonical / "outside-orchestrator" / "SKILL.md").read_text()
     assert "`event-driven-operation` skill" in instructions
     assert "`worker-delegation` skill" in instructions
+    assert "Call `get_agent_id()` first" in first_turn
+    assert "`outside-orchestrator` skill" in first_turn
+    assert "On every user turn" in outside
+    assert "simple question directly" in outside
+    assert all(term in outside for term in ("coding", "planning", "job launching"))
+    assert "primary in the BeeLoop harness" in outside
+    assert all(
+        term in outside
+        for term in (
+            "only after completion",
+            "`agent_art/messages/<short-sender-descriptor>`",
+            "primary's current working directory",
+        )
+    )
     assert (source_template / ".gitignore").read_text(encoding="utf-8") == (
         "/secrets.env\n/workspaces/\n"
     )
@@ -194,6 +210,7 @@ def test_orchestrator_role_defines_its_lifecycle_flows():
         "event-driven-operation",
         "orchestrator-first-turn",
         "orchestrator-heartbeat",
+        "outside-orchestrator",
         "worker-delegation",
         "workspace-management",
     ):

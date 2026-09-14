@@ -5,8 +5,8 @@ description: Create BeeLoop agents with create_agent, or configure reusable role
 
 # Create a BeeLoop agent
 
-1. Run `beeloop root` and reuse `<root>/configs/roles/<role>/` if it exists;
-   otherwise create it.
+1. Call `get_beeloop_root()` and reuse `<root>/configs/roles/<role>/` if it
+   exists; otherwise create it.
    Preserve existing role files unless the request requires changes.
 2. Add `role.toml` only for needed defaults or policies. Use TOML. Its `cwd`
    is a default; caller input overrides it.

@@ -15,6 +15,7 @@ class ConfigError(RuntimeError):
 
 CONFIG_DIR = Path(".config") / "beeloop"
 LOOP_CONFIG = "loop.toml"
+STATE_CONFIG = "state.toml"
 ROOT_DIRECTORIES = (
     "runtime",
     "logs",
@@ -30,6 +31,10 @@ def config_path() -> Path:
         return Path.home() / CONFIG_DIR / LOOP_CONFIG
     except RuntimeError as exc:
         raise ConfigError(f"cannot determine the BeeLoop config directory: {exc}") from exc
+
+
+def state_config_path() -> Path:
+    return config_path().with_name(STATE_CONFIG)
 
 
 def root() -> Path:
@@ -80,6 +85,42 @@ def setup_root(given: Path | None = None) -> Path:
         except OSError as exc:
             raise ConfigError(f"cannot write {path}: {exc}") from exc
     return selected
+
+
+def setup_state_dir(given: Path | None = None) -> Path:
+    """Configure and prepare the state directory."""
+    path = state_config_path()
+    if given is None and path.exists():
+        selected = _configured_state_dir()
+        should_write = False
+    else:
+        selected = (given or Path.home() / ".beeloop_states").expanduser().resolve()
+        should_write = True
+
+    try:
+        selected.mkdir(parents=True, exist_ok=True)
+        if not selected.is_dir():
+            raise NotADirectoryError(selected)
+    except OSError as exc:
+        raise ConfigError(f"cannot prepare BeeLoop state directory {selected}: {exc}") from exc
+    if should_write:
+        try:
+            _write(path, f'state_dir = {_toml_string(str(selected))}\n')
+        except OSError as exc:
+            raise ConfigError(f"cannot write {path}: {exc}") from exc
+    return selected
+
+
+def _configured_state_dir() -> Path:
+    path = state_config_path()
+    data = _read(path)
+    configured = data.get("state_dir")
+    if not isinstance(configured, str) or not configured:
+        raise ConfigError(f"{path} must contain a non-empty string `state_dir`")
+    resolved = Path(configured)
+    if not resolved.is_absolute():
+        raise ConfigError(f"{path}: `state_dir` must be an absolute path")
+    return resolved.resolve()
 
 
 def _read(path: Path) -> dict[str, Any]:
