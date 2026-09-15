@@ -33,6 +33,9 @@ BeeLoop parses each envelope and dispatches to an agent.
   invoking the substantive implementation.
 - Keep each source's runtime under
   `<beeloop-root>/runtime/sources/<source-name>/`.
+- Keep source runtimes minimal: adapter code, configuration, credentials, and
+  transport state only. Store work and artifacts in the input's `cwd` or a
+  user-designated project directory.
 - Find `<beeloop-root>` with `beeloop root` and enable an input with
   `chmod +x <beeloop-root>/inputs.d/<source-name>`.
 - Emit one envelope or nothing to stdout; diagnostics go to stderr.

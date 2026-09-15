@@ -45,6 +45,12 @@ def main() -> int:
     reply_parser.add_argument("--source", required=True)
     reply_parser.add_argument("--text", required=True, help="reply text, or '-' to read stdin")
 
+    dm_thread_parser = subparsers.add_parser(
+        "dm-thread", help="open a new DM thread with the configured owner and post a body into it"
+    )
+    dm_thread_parser.add_argument("--header", required=True, help="short top-level message")
+    dm_thread_parser.add_argument("--text", required=True, help="thread body, or '-' to read stdin")
+
     upload_parser = subparsers.add_parser("upload", help="upload a local file to an authenticated Slack source")
     upload_parser.add_argument("--source", required=True)
     upload_parser.add_argument("--file", type=Path, required=True)
@@ -59,6 +65,8 @@ def main() -> int:
         result = fetch(root, args.source, args.permalink, args.download_files, args.output_dir)
     elif args.command == "reply":
         result = reply(root, args.source, _read_text_arg(args.text))
+    elif args.command == "dm-thread":
+        result = dm_thread(root, args.header, _read_text_arg(args.text))
     elif args.command == "upload":
         result = upload(root, args.source, args.file, args.caption, args.alt_text)
     else:
@@ -132,6 +140,25 @@ def reply(root: Path, source_value: str, text: str) -> dict[str, Any]:
     client = _web_client(_require_config(root))
     response = client.chat_postMessage(channel=source.channel, text=text, thread_ts=source.thread_ts)
     return {"ok": True, "channel": response.get("channel"), "ts": response.get("ts")}
+
+
+def dm_thread(root: Path, header: str, text: str) -> dict[str, Any]:
+    """Start a new owner DM thread: the header at top level, the body as its first reply.
+
+    For scheduled work that the owner asked for but did not just message about,
+    so there is no inbound source to reply to. The destination is not a
+    parameter: it is the DM channel Slack opens for `SLACK_ALLOWED_USER_ID`.
+    """
+    config = _require_config(root)
+    client = _web_client(config)
+    response = client.conversations_open(users=config.allowed_user_id)
+    if not (channel := (response.get("channel") or {}).get("id")):
+        raise RuntimeError("Slack did not return the configured owner's DM channel")
+    header_message = client.chat_postMessage(channel=channel, text=header)
+    if not (thread_ts := header_message.get("ts")):
+        raise RuntimeError("Slack did not return a timestamp for the thread header")
+    body_message = client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
+    return {"ok": True, "channel": channel, "thread_ts": thread_ts, "ts": body_message.get("ts")}
 
 
 def upload(

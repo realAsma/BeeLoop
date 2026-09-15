@@ -20,6 +20,11 @@ For an inbound event:
    --source <source> --text -`. Use `upload --source <source> --file <path>` for
    files.
 
+A scheduled job that the owner configured, with no inbound event to reply to,
+opens its own thread instead: `dm-thread --header <short line> --text -`. It
+goes only to the configured owner's DM. Do not use it to start a conversation
+the owner did not ask for.
+
 Put the result first and keep replies comfortable to read in Slack. Prefer
 short paragraphs, `*bold*` emphasis, `•` bullets, and `<url|label>` links.
 Briefly state blockers and the next useful action.

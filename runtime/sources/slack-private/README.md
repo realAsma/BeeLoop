@@ -5,6 +5,12 @@ It accepts only private `message.im` events from that user and creates one
 persistent orchestrator per Slack thread. Message bodies and file bytes are
 fetched only after intake authentication.
 
+`reply` and `upload` answer inside a thread this input authenticated. The
+`dm-thread` helper is the one outbound path with no inbound event behind it: it
+opens a new thread in the owner's DM for scheduled work the owner configured,
+such as the `research-digest` input. Its destination is always
+`SLACK_ALLOWED_USER_ID`.
+
 ## Slack app
 
 Create or reuse an app with Socket Mode enabled, an app token with

@@ -3,6 +3,7 @@ from __future__ import annotations
 import stat
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -187,6 +188,33 @@ def test_reply_uses_authenticated_source(monkeypatch, tmp_path: Path):
     assert slack_cli.reply(tmp_path, record["source"], "done")["ok"] is True
     with pytest.raises(RuntimeError, match="has not been authenticated"):
         slack_cli.reply(tmp_path, make_source("D999", "1712345678.901234"), "no")
+
+
+def test_dm_thread_opens_the_owner_dm_and_threads_the_body(monkeypatch, tmp_path: Path):
+    class FakeClient:
+        posts = []
+
+        def conversations_open(self, users):
+            assert users == "UOWNER"
+            return {"channel": {"id": "DOWNER"}}
+
+        def chat_postMessage(self, **kwargs):
+            self.posts.append(kwargs)
+            return {"ts": f"171234568{len(self.posts)}.000001"}
+
+    client = FakeClient()
+    monkeypatch.setattr(
+        slack_cli, "_require_config", lambda root: SimpleNamespace(allowed_user_id="UOWNER")
+    )
+    monkeypatch.setattr(slack_cli, "_web_client", lambda config: client)
+
+    result = slack_cli.dm_thread(tmp_path, ":thread: Research digest", "the body")
+
+    assert client.posts == [
+        {"channel": "DOWNER", "text": ":thread: Research digest"},
+        {"channel": "DOWNER", "text": "the body", "thread_ts": "1712345681.000001"},
+    ]
+    assert result["thread_ts"] == "1712345681.000001"
 
 
 def test_download_does_not_send_token_to_non_slack_url(tmp_path: Path):
