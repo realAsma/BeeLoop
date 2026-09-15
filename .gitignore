@@ -27,10 +27,6 @@
 # Re-ignore generated content swept in by the broad source rules.
 /state_store/
 /src/*.egg-info/
-/build/
 
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
