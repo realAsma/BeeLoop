@@ -12,6 +12,7 @@
 !/gateway/**
 
 !/inputs.d/README.md
+!/inputs.d/beeloop-timers
 !/inputs.d/slack-private
 
 # The Slack source is distributable code; its deployment data stays ignored.

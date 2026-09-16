@@ -5,28 +5,32 @@ BeeLoop runs long-lived, directory-backed agents that receive events and message
 ## Quick Start
 
 ```sh
-git clone git@github.com:realAsma/BeeLoop-State.git state_store
 python3 -m pip install -e .
-beeloop setup --root "$PWD"
-codex plugin marketplace add ./state_store
+codex plugin marketplace add git@github.com:realAsma/BeeLoop-State.git
 codex plugin add beeloop-state@beeloop-state
 codex plugin marketplace add .
 codex plugin add beeloop-tools@beeloop-tools
-mkdir -p workspaces/orchestrator
-cp -a templates/orchestrator/. workspaces/orchestrator/
 ```
 
-Setup records machine-local absolute paths in
-`~/.config/beeloop/loop.toml` and `~/.config/beeloop/state.toml`. Pass
-`--state-dir PATH` to select a state directory other than `~/.beeloop_states`.
-Re-running setup without a path preserves that component's existing config;
-supplying a path replaces it.
+BeeLoop uses this folder as its root and creates the orchestrator workspace
+when it is first needed. To use a different folder, create
+`~/.config/beeloop/loop.toml` before starting BeeLoop:
+
+```bash
+mkdir -p "$HOME/.config/beeloop"
+cat > "$HOME/.config/beeloop/loop.toml" <<EOF
+root = "$HOME/my-beeloop"
+EOF
+```
+
+BeeLoop State stores work in `~/.beeloop_states` by default. Its repository
+documents how to override that location.
 
 <details>
 <summary>Claude setup</summary>
 
 ```sh
-claude plugin marketplace add ./state_store
+claude plugin marketplace add git@github.com:realAsma/BeeLoop-State.git
 claude plugin install beeloop-state@beeloop-state
 claude plugin marketplace add .
 claude plugin install beeloop-tools@beeloop-tools

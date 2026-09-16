@@ -9,7 +9,7 @@ import pytest
 
 from beeloop import agents as ag
 from beeloop.agents import records
-from beeloop.config import setup_root
+from beeloop.config import config_path
 
 # The source tree, for its checked-in configs and templates. It is not the
 # configured root:
@@ -65,5 +65,7 @@ def beeloop_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # and empty is the whole point -- `worker` is the role that says nothing.
     (home / "configs" / "roles" / "worker").mkdir(exist_ok=True)
     (home / "runtime").mkdir()
-    setup_root(home)
+    config = config_path()
+    config.parent.mkdir(parents=True)
+    config.write_text(f'root = "{home}"\n', encoding="utf-8")
     return home

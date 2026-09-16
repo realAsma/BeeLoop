@@ -14,14 +14,6 @@ from beeloop.dispatch.envelope import Envelope, serialize
 from . import records
 from .agent import agent_class
 
-ADAPTER_NAME = "beeloop-timers"
-ADAPTER_BODY = (
-    "#!/usr/bin/env bash\n"
-    "set -euo pipefail\n"
-    "exec python3 -m beeloop.agents.timers\n"
-)
-
-
 def create_wake(
     agent_id: str,
     *,
@@ -74,14 +66,6 @@ def cancel_wake(agent_id: str, timer_id: str) -> bool:
             record["timers"] = [asdict(item) for item in remaining]
             records.write(record, _schema(record))
         return removed
-
-
-def install_adapter(root: Path) -> Path:
-    path = root / "inputs.d" / ADAPTER_NAME
-    if not path.exists() or path.read_text("utf-8") != ADAPTER_BODY:
-        records.write_file(path, ADAPTER_BODY)
-    path.chmod(0o755)
-    return path
 
 
 def poll(current: dt.datetime | None = None) -> Envelope | None:

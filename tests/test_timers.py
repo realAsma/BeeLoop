@@ -88,7 +88,7 @@ def test_recurrence_end_is_inclusive():
     assert finished == []
 
 
-def test_legacy_record_has_no_timer_field_until_its_first_timer(beeloop_root):
+def test_legacy_record_has_no_timer_field_until_its_first_timer():
     agent = worker()
     assert "timers" not in records.read(agent.agent_id)
     assert agent_timers.list_wakes(agent.agent_id) == []
@@ -98,7 +98,6 @@ def test_legacy_record_has_no_timer_field_until_its_first_timer(beeloop_root):
     )
 
     assert records.read(agent.agent_id)["timers"] == [asdict(timer)]
-    assert not (beeloop_root / "inputs.d" / agent_timers.ADAPTER_NAME).exists()
 
 
 def test_role_heartbeat_arms_an_indefinite_recurring_timer(beeloop_root):
