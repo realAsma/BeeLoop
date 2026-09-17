@@ -56,7 +56,43 @@ tmux new-session -d -s beeloop beeloop
 
 This runs the gateway in the background, where it waits for inputs.
 
+## Orchestrator
+
+The orchestrator is a special, stateful, event-driven agent designed to be your
+chief of staff. It delegates work, shares progress, and asks when it needs input.
+
+Grow the orchestrator by talking to it and adding skills for workflows you
+repeat. To talk to it from the Codex or Claude Code CLI:
+
+```sh
+cd orchestrator && codex
+# or
+cd orchestrator && claude
+```
+
+To customize its personality:
+
+```sh
+cp orchestrator/SOUL_template.md orchestrator/SOUL.md
+```
+
 ### Connect a Slack App
 
-To receive inputs from Slack, follow the
+For the best experience, use Slack as the main communication channel with the
+orchestrator. Follow the
 [private Slack input setup](runtime/sources/slack-private/README.md).
+
+Then record it as the primary communication channel:
+
+```sh
+echo 'The primary communication channel with the user is the configured Slack app in runtime/sources/slack-private.' >> orchestrator/MEMORY.md
+```
+
+### Example Skill: Feature to Pull Request
+
+Ask in Slack for a feature. The orchestrator delegates the work, opens a draft
+pull request, notifies you in Slack, and addresses your GitHub review comments
+until it is ready.
+
+Work with your orchestrator to set up this flow. GitHub setup varies by
+organization, so talk to your orchestrator first. :)

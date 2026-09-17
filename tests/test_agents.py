@@ -185,10 +185,12 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
     workspace = SOURCE / "orchestrator"
     canonical = workspace / ".agents" / "skills"
     instructions = (workspace / "AGENTS.md").read_text(encoding="utf-8")
+    soul = (workspace / "SOUL_template.md").read_text(encoding="utf-8")
     first_turn = (canonical / "orchestrator-first-turn" / "SKILL.md").read_text()
     outside = (canonical / "outside-orchestrator" / "SKILL.md").read_text()
     assert "`event-driven-operation` skill" in instructions
     assert "`worker-delegation` skill" in instructions
+    assert "an uplifting chief of staff and personal assistant" in soul
     assert "Call `get_agent_id()` first" in first_turn
     assert "`outside-orchestrator` skill" in first_turn
     assert "On every user turn" in outside
@@ -204,7 +206,7 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
         )
     )
     assert (workspace / ".gitignore").read_text(encoding="utf-8") == (
-        "/secrets.env\n/agent_art/\n/workspaces/\n"
+        "/secrets.env\n/SOUL.md\n/MEMORY.md\n/agent_art/\n/workspaces/\n"
     )
     for name in (
         "event-driven-operation",
