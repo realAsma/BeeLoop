@@ -43,7 +43,6 @@ from .roles import (
     Role,
     UnknownRole,
     load_role,
-    seed,
     workspace,
 )
 
@@ -55,7 +54,7 @@ __all__ = [
     "agent_path", "queue_path", "record_path", "root", "runtime",
     "Turn", "claim", "drain_or_release", "new_agent_id", "now", "read",
     "files_lock", "update", "validate", "write",
-    "Role", "load_role", "seed", "workspace",
+    "Role", "load_role", "workspace",
     "REGISTRY", "Agent", "agent_class", "create", "register", "restore",
     "Delivery", "InputItem", "Session",
 ]

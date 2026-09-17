@@ -29,9 +29,9 @@ claude plugin install beeloop-tools@beeloop-tools
 <details>
 <summary>Root for BeeLoop and Memory Files (Optional)</summary>
 
-BeeLoop uses this folder as its root and creates the orchestrator workspace
-when it is first needed. To use a different folder, create
-`~/.config/beeloop/loop.toml` before starting BeeLoop:
+By default, this checkout is the BeeLoop root and includes the orchestrator
+workspace. To use a different prepared BeeLoop root containing `configs/` and
+`orchestrator/`, create `~/.config/beeloop/loop.toml` before starting BeeLoop:
 
 ```bash
 mkdir -p "$HOME/.config/beeloop"

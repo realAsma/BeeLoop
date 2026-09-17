@@ -265,8 +265,8 @@ def test_the_default_role_keys_the_same_as_naming_it(routes, monkeypatch):
     mismatch is a duplicate agent, months before anyone notices."""
     monkeypatch.setattr(rt, "DEFAULT_ROLE", "orchestrator")
 
-    silent = key(role="", cwd="workspaces/orchestrator")
-    spelled = key(role="orchestrator", cwd="workspaces/orchestrator")
+    silent = key(role="", cwd="orchestrator")
+    spelled = key(role="orchestrator", cwd="orchestrator")
 
     assert silent == spelled
     assert rt.agent_for(silent).agent_id == rt.agent_for(spelled).agent_id
@@ -413,9 +413,7 @@ def test_orchestrator_default_places_an_envelope_without_a_cwd(beeloop_root):
         source="slack-private:D123:1712345678901234",
     )
 
-    assert route.cwd == str(
-        (beeloop_root / "workspaces" / "orchestrator").resolve()
-    )
+    assert route.cwd == str((beeloop_root / "orchestrator").resolve())
 
 
 # ---------------------------------------------------------------- dispatching

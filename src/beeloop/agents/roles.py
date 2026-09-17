@@ -1,8 +1,7 @@
-"""Role configuration and workspace preparation."""
+"""Role configuration and workspace resolution."""
 
 from __future__ import annotations
 
-import shutil
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,10 +37,6 @@ class Role:
     session_ttl: session_ttl.Policy | None = None
     prompts: Mapping[str, str] = field(default_factory=dict)
     heartbeat: str | None = None
-
-    @property
-    def template(self) -> Path:
-        return root() / "templates" / self.directory.name
 
     def prompt(self, name: str, default: str | None = None) -> str | None:
         prompt = self.prompts.get(name, default)
@@ -124,21 +119,3 @@ def workspace(role: Role, cwd: Path | str | None) -> Path:
             f"to work; add `cwd` to {role.directory / 'role.toml'} or pass one in"
         )
     return (where if where.is_absolute() else root() / where).resolve()
-
-
-def seed(source: Path, destination: Path) -> None:
-    """Copy missing template files without overwriting workspace content."""
-    if not source.is_dir():
-        return
-    for item in sorted(source.rglob("*")):
-        target = destination / item.relative_to(source)
-        if item.is_symlink():
-            if target.exists() or target.is_symlink():
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.symlink_to(item.readlink(), target_is_directory=item.is_dir())
-        elif item.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
-        elif not target.exists() and not target.is_symlink():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(item, target)

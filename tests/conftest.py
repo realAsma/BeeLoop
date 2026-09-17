@@ -11,14 +11,13 @@ from beeloop import agents as ag
 from beeloop.agents import records
 from beeloop.config import config_path
 
-# The source tree, for its checked-in configs and templates. It is not the
-# configured root:
+# The source tree, for its checked-in configs and orchestrator workspace. It is
+# not the configured root:
 # the packages come from the install, and each test gets a root of its own below.
 SOURCE = Path(__file__).resolve().parents[1]
 
 
 def orchestrator(role: str = "orchestrator", **kwargs) -> ag.Agent:
-    kwargs.setdefault("cwd", "workspaces/orchestrator")
     return ag.create(role, **kwargs)
 
 
@@ -32,16 +31,10 @@ def worker(**kwargs) -> ag.Agent:
     return ag.create("worker", **kwargs)
 
 
-def make_role(
-    home: Path, name: str, config: str = "", template: dict | None = None
-) -> Path:
+def make_role(home: Path, name: str, config: str = "") -> Path:
     directory = home / "configs" / "roles" / name
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "role.toml").write_text(config, encoding="utf-8")
-    for relative, body in (template or {}).items():
-        path = home / "templates" / name / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body, encoding="utf-8")
     return directory
 
 
@@ -60,7 +53,7 @@ def beeloop_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     user_home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(user_home))
     shutil.copytree(SOURCE / "configs", home / "configs")
-    shutil.copytree(SOURCE / "templates", home / "templates")
+    shutil.copytree(SOURCE / "orchestrator", home / "orchestrator")
     # Made here rather than checked in: git cannot track an empty directory,
     # and empty is the whole point -- `worker` is the role that says nothing.
     (home / "configs" / "roles" / "worker").mkdir(exist_ok=True)

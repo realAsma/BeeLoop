@@ -24,7 +24,7 @@ from .records import (
     write,
     write_file,
 )
-from .roles import Role, load_role, seed, workspace
+from .roles import Role, load_role, workspace
 
 
 class NotResumable(AgentError):
@@ -79,7 +79,6 @@ class Agent:
         adapter = backends.get(backend_name)
         where = workspace(role, cwd)
         where.mkdir(parents=True, exist_ok=True)
-        seed(role.template, where)
 
         stamp = now()
         agent_id = new_agent_id()

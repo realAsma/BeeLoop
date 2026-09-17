@@ -1,7 +1,7 @@
 #CHANGEME: set to "codex" or "claude_code".
 backend = "codex"
 permissions = "approve_for_me"
-cwd = "workspaces/orchestrator"
+cwd = "orchestrator"
 
 [allowed_receivers]
 roles = ["*"]

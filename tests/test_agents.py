@@ -79,7 +79,7 @@ def test_an_empty_directory_is_a_working_role(beeloop_root):
 @pytest.mark.parametrize(
     ("name", "backend", "permissions", "cwd"),
     [
-        ("orchestrator", "codex", "approve_for_me", "workspaces/orchestrator"),
+        ("orchestrator", "codex", "approve_for_me", "orchestrator"),
         ("worker", "claude_code", "approve_for_me", None),
         ("planner", "claude_code", "read", None),
     ],
@@ -161,7 +161,7 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
     role = ag.load_role("orchestrator")
     config = tomllib.loads((role.directory / "role.toml").read_text("utf-8"))
 
-    assert role.cwd == (beeloop_root / "workspaces" / "orchestrator").resolve()
+    assert role.cwd == (beeloop_root / "orchestrator").resolve()
     assert role.session_ttl == session_ttl.Policy(
         idle_seconds=3600, max_age_seconds=86400
     )
@@ -182,9 +182,9 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
     }
     assert config["allowed_receivers"]["roles"] == ["*"]
 
-    canonical = role.template / ".agents" / "skills"
-    source_template = SOURCE / "templates" / "orchestrator"
-    instructions = (source_template / "AGENTS.md").read_text(encoding="utf-8")
+    workspace = SOURCE / "orchestrator"
+    canonical = workspace / ".agents" / "skills"
+    instructions = (workspace / "AGENTS.md").read_text(encoding="utf-8")
     first_turn = (canonical / "orchestrator-first-turn" / "SKILL.md").read_text()
     outside = (canonical / "outside-orchestrator" / "SKILL.md").read_text()
     assert "`event-driven-operation` skill" in instructions
@@ -203,8 +203,8 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
             "primary's current working directory",
         )
     )
-    assert (source_template / ".gitignore").read_text(encoding="utf-8") == (
-        "/secrets.env\n/workspaces/\n"
+    assert (workspace / ".gitignore").read_text(encoding="utf-8") == (
+        "/secrets.env\n/agent_art/\n/workspaces/\n"
     )
     for name in (
         "event-driven-operation",
@@ -215,8 +215,8 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
         "workspace-management",
     ):
         assert (canonical / name / "SKILL.md").is_file()
-        claude_link = source_template / ".claude" / "skills" / name
-        canonical_source = source_template / ".agents" / "skills" / name
+        claude_link = workspace / ".claude" / "skills" / name
+        canonical_source = workspace / ".agents" / "skills" / name
         assert claude_link.is_symlink()
         assert claude_link.resolve() == canonical_source.resolve()
 
@@ -248,84 +248,10 @@ def test_role_prompts_reject_non_tables_and_non_strings(beeloop_root, config):
         ag.load_role("broken-prompts")
 
 
-# --------------------------------------------------------------- the seeding
-
-SEEDED = 'backend = "fake"\ncwd = "workspaces/seeded"\n'
-TEMPLATE = {
-    "AGENTS.md": "the standing instructions",
-    "skills/logging/SKILL.md": "how to log",
-    ".mcp.json": "{}",
-}
+# ------------------------------------------------------------- the workspace
 
 
-def test_a_fresh_cwd_is_seeded_with_everything_in_the_template(beeloop_root):
-    """The gap this closes: an agent whose cwd is not its role directory never
-    saw the role's instructions, so they had to ride in every envelope."""
-    make_role(beeloop_root, "seeded", SEEDED, TEMPLATE)
-    agent = ag.create("seeded")
-
-    assert (agent.cwd / "AGENTS.md").read_text("utf-8") == "the standing instructions"
-    assert (agent.cwd / "skills" / "logging" / "SKILL.md").exists()
-    assert (agent.cwd / ".mcp.json").exists(), "a dotfile was skipped"
-
-
-def test_seeding_never_overwrites_a_file_that_is_already_there(beeloop_root):
-    """A human edits a live agent's instructions in place; the next agent
-    created into that same cwd must not silently undo the edit."""
-    make_role(beeloop_root, "seeded", SEEDED, TEMPLATE)
-    first = ag.create("seeded")
-    (first.cwd / "AGENTS.md").write_text("edited by hand", encoding="utf-8")
-
-    second = ag.create("seeded")
-
-    assert second.cwd == first.cwd
-    assert (second.cwd / "AGENTS.md").read_text("utf-8") == "edited by hand"
-
-
-def test_seeding_preserves_directory_symlinks(beeloop_root):
-    role_dir = make_role(beeloop_root, "linked", SEEDED)
-    template = beeloop_root / "templates" / role_dir.name
-    canonical = template / ".agents" / "skills" / "logging"
-    canonical.mkdir(parents=True)
-    (canonical / "SKILL.md").write_text("how to log", encoding="utf-8")
-    linked = template / ".claude" / "skills" / "logging"
-    linked.parent.mkdir(parents=True)
-    linked.symlink_to("../../.agents/skills/logging", target_is_directory=True)
-
-    agent = ag.create("linked")
-
-    seeded = agent.cwd / ".claude" / "skills" / "logging"
-    assert seeded.is_symlink()
-    assert seeded.readlink() == Path("../../.agents/skills/logging")
-    assert seeded.resolve() == (agent.cwd / ".agents" / "skills" / "logging").resolve()
-
-
-def test_seeding_does_not_overwrite_a_broken_destination_symlink(beeloop_root):
-    source = beeloop_root / "source"
-    destination = beeloop_root / "destination"
-    source.mkdir()
-    destination.mkdir()
-    (source / "link").symlink_to("source-target")
-    (destination / "link").symlink_to("missing-target")
-
-    roles.seed(source, destination)
-
-    assert (destination / "link").is_symlink()
-    assert (destination / "link").readlink() == Path("missing-target")
-
-
-def test_the_role_config_never_reaches_a_workspace(beeloop_root):
-    """Only the role template is copied, so this holds by construction rather
-    than by a blocklist that the next config file would outgrow."""
-    make_role(beeloop_root, "configured", SEEDED, TEMPLATE)
-    agent = ag.create("configured")
-
-    assert (agent.cwd / "AGENTS.md").exists()
-    assert not (agent.cwd / "role.toml").exists()
-
-
-def test_a_role_with_no_template_seeds_nothing_and_does_not_fail(beeloop_root):
-    """Adding a role is a directory, and material in it is optional."""
+def test_agent_creation_makes_a_missing_workspace(beeloop_root):
     make_role(beeloop_root, "bare", 'backend = "fake"\ncwd = "workspaces/bare"\n')
     agent = ag.create("bare")
 
@@ -335,16 +261,19 @@ def test_a_role_with_no_template_seeds_nothing_and_does_not_fail(beeloop_root):
 
 def test_a_cwd_passed_in_beats_the_one_the_role_names(beeloop_root):
     """The delegation decides where a worker works; the role only defaults it."""
-    make_role(beeloop_root, "seeded", SEEDED, TEMPLATE)
-    agent = ag.create("seeded", cwd="workspaces/elsewhere")
+    make_role(
+        beeloop_root,
+        "configured",
+        'backend = "fake"\ncwd = "workspaces/configured"\n',
+    )
+    agent = ag.create("configured", cwd="workspaces/elsewhere")
 
     assert agent.cwd == (beeloop_root / "workspaces" / "elsewhere").resolve()
-    assert (agent.cwd / "AGENTS.md").exists()
+    assert list(agent.cwd.iterdir()) == []
 
 
 def test_a_role_that_says_nowhere_to_work_is_refused_and_named(beeloop_root):
-    """A role directory is not a place to work, so the old fallback to it would
-    seed a role with its own template and let an agent write over its config."""
+    """A role directory is configuration, not a place to work."""
     with pytest.raises(ag.AgentError, match="neither role 'worker'"):
         ag.create("worker")
 
