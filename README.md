@@ -22,7 +22,7 @@ codex plugin add beeloop-tools@beeloop-tools
 ```sh
 claude plugin marketplace add git@github.com:realAsma/BeeLoop-State.git
 claude plugin install beeloop-state@beeloop-state
-claude plugin marketplace add .
+claude plugin marketplace add ./
 claude plugin install beeloop-tools@beeloop-tools
 ```
 
