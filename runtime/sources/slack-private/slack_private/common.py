@@ -82,12 +82,8 @@ def downloads_dir(root: Path) -> Path:
     return path
 
 
-def load_slack_config(root: Path, env: Mapping[str, str] | None = None) -> SlackConfig:
+def load_slack_config(root: Path) -> SlackConfig:
     values = read_env_file(secrets_path(root))
-    source_env = os.environ if env is None else env
-    for name in REQUIRED_ENV:
-        if value := source_env.get(name, ""):
-            values[name] = value
     return SlackConfig(
         app_token=values.get("SLACK_APP_TOKEN", ""),
         bot_token=values.get("SLACK_BOT_TOKEN", ""),
@@ -115,22 +111,6 @@ def read_env_file(path: Path) -> dict[str, str]:
         if parsed is not None and parsed[0] in REQUIRED_ENV:
             values[parsed[0]] = parsed[1]
     return values
-
-
-def write_secrets(root: Path, candidates: Mapping[str, str]) -> list[str]:
-    path = secrets_path(root)
-    existing = read_env_file(path)
-    values = {
-        name: existing.get(name, "") or candidates.get(name, "")
-        for name in REQUIRED_ENV
-    }
-    config = SlackConfig(values[REQUIRED_ENV[0]], values[REQUIRED_ENV[1]], values[REQUIRED_ENV[2]])
-    validate_config(config)
-    text = "# Local Slack credentials. Do not commit.\n" + "".join(
-        f"{name}={shlex.quote(values[name])}\n" for name in REQUIRED_ENV
-    )
-    _atomic_write_text(path, text, private=True)
-    return [name for name in REQUIRED_ENV if existing.get(name)]
 
 
 def make_source(channel: str, thread_ts: str) -> str:

@@ -11,36 +11,50 @@ opens a new thread in the owner's DM for scheduled work the owner configured,
 such as the `research-digest` input. Its destination is always
 `SLACK_ALLOWED_USER_ID`.
 
-## Slack app
-
-Create or reuse an app with Socket Mode enabled, an app token with
-`connections:write`, and these bot scopes:
-
-- `im:history`
-- `chat:write`
-- `im:write`
-- `files:read`
-- `files:write`
-
-Subscribe only to the `message.im` bot event, enable App Home messages, and
-install the app in the target workspace.
-
 ## Setup
 
-Install the optional dependency and run setup:
+1. Install the optional dependency:
 
 ```sh
 python3 -m pip install -e '.[slack]'
+```
+
+2. [Create a Slack app](https://docs.slack.dev/app-management/quickstart-app-settings/)
+   in the workspace BeeLoop will use, then configure it:
+
+   - Enable [Socket Mode](https://docs.slack.dev/apis/events-api/using-socket-mode/)
+     and create an app-level token with the `connections:write` scope.
+   - Add the `im:history`, `chat:write`, `im:write`, `files:read`, and
+     `files:write` bot token scopes.
+   - Subscribe to the `message.im` bot event.
+   - Enable the Messages Tab under App Home.
+   - Install the app into the workspace.
+
+3. Create `runtime/sources/slack-private/secrets.env`:
+
+```dotenv
+SLACK_APP_TOKEN=xapp-...
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_ALLOWED_USER_ID=U...
+```
+
+Use the app-level token, the installed app's `xoxb-` bot token, and your
+[Slack member ID](https://slack.com/help/articles/360003827751-Create-a-link-to-a-members-profile).
+Then protect the file so only its owner can read or write it:
+
+```sh
+chmod 600 runtime/sources/slack-private/secrets.env
+```
+
+4. Verify the configuration and enable Slack intake:
+
+```sh
 runtime/sources/slack-private/slack-private setup
 ```
 
-Setup reads only `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`, and
-`SLACK_ALLOWED_USER_ID`. It writes them to the ignored `secrets.env` with mode
-`0600` and verifies the workspace and owner DM.
+Slack-private reads credentials only from this ignored `secrets.env` file.
+Values exported in the process environment are not used.
+Setup enables the input only after all checks succeed. The running BeeLoop
+gateway discovers it on its next poll.
 
-Enable intake only after setup succeeds:
-
-```sh
-chmod +x inputs.d/slack-private
-gateway/loop
-```
+If any step fails, tell your agent what happened and ask it to fix the setup. :)

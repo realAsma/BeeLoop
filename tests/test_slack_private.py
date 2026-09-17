@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import stat
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,15 +15,17 @@ sys.path.insert(0, str(SOURCE_ROOT))
 from slack_private import cli as slack_cli  # noqa: E402
 from slack_private import input as slack_input  # noqa: E402
 from slack_private.common import (  # noqa: E402
+    SlackConfig,
     enqueue_authenticated_record,
+    load_slack_config,
     make_source,
     parse_slack_permalink,
     parse_source,
     pop_authenticated_record,
     require_known_source,
     sanitize_filename,
+    validate_config,
     validate_permalink_source,
-    write_secrets,
 )
 from slack_private.input import format_envelope  # noqa: E402
 from slack_private.listener import SlackIdentity, validate_events_api_payload  # noqa: E402
@@ -148,20 +149,35 @@ def test_permalink_must_match_source():
         validate_permalink_source(permalink, parse_source("slack-private:D999:1712345678901234"))
 
 
-def test_write_secrets_allowlists_keys_and_writes_private_file(tmp_path: Path):
-    write_secrets(
-        tmp_path,
-        {
-            "SLACK_APP_TOKEN": "xapp-test",
-            "SLACK_BOT_TOKEN": "xoxb-test",
-            "SLACK_ALLOWED_USER_ID": "UOWNER",
-            "INTERNAL_TOKEN": "must-not-copy",
-        },
-    )
+def test_slack_config_reads_only_secrets_file(monkeypatch, tmp_path: Path):
     target = tmp_path / "runtime" / "sources" / "slack-private" / "secrets.env"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        "SLACK_APP_TOKEN=xapp-file\n"
+        "SLACK_BOT_TOKEN=xoxb-file\n"
+        "SLACK_ALLOWED_USER_ID=UFILE\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SLACK_APP_TOKEN", "xapp-environment")
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-environment")
+    monkeypatch.setenv("SLACK_ALLOWED_USER_ID", "UENVIRONMENT")
 
-    assert "INTERNAL_TOKEN" not in target.read_text(encoding="utf-8")
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert load_slack_config(tmp_path) == SlackConfig("xapp-file", "xoxb-file", "UFILE")
+
+
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        (SlackConfig("", "", ""), "Missing required values"),
+        (SlackConfig("invalid", "xoxb-test", "UOWNER"), "SLACK_APP_TOKEN must be an xapp token"),
+        (SlackConfig("xapp-test", "invalid", "UOWNER"), "SLACK_BOT_TOKEN must be an xoxb token"),
+        (SlackConfig("xapp-test", "xoxb-test", "invalid"), "SLACK_ALLOWED_USER_ID is not a Slack user ID"),
+    ],
+)
+def test_slack_config_validation(config: SlackConfig, message: str):
+    with pytest.raises(RuntimeError, match=message):
+        validate_config(config)
+
 
 
 def test_reply_uses_authenticated_source(monkeypatch, tmp_path: Path):

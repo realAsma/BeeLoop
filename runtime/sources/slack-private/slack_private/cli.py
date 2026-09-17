@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import getpass
 import importlib.util
 import json
 import sys
@@ -10,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from .common import (
-    REQUIRED_ENV,
     SlackConfig,
     SlackPermalink,
     beeloop_root,
@@ -24,7 +22,6 @@ from .common import (
     secrets_path,
     validate_config,
     validate_permalink_source,
-    write_secrets,
 )
 
 
@@ -32,8 +29,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Authenticated private Slack helpers for BeeLoop.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    setup_parser = subparsers.add_parser("setup", help="write credentials and verify access")
-    setup_parser.add_argument("--non-interactive", action="store_true")
+    subparsers.add_parser("setup", help="verify credentials and enable intake")
 
     fetch_parser = subparsers.add_parser("fetch", help="fetch an authenticated Slack event and thread")
     fetch_parser.add_argument("--source", required=True)
@@ -60,7 +56,7 @@ def main() -> int:
     args = parser.parse_args()
     root = beeloop_root()
     if args.command == "setup":
-        result = setup(root, args.non_interactive)
+        result = setup(root)
     elif args.command == "fetch":
         result = fetch(root, args.source, args.permalink, args.download_files, args.output_dir)
     elif args.command == "reply":
@@ -75,33 +71,22 @@ def main() -> int:
     return 0
 
 
-def setup(root: Path, non_interactive: bool) -> dict[str, Any]:
-    current = load_slack_config(root)
-    values = {
-        "SLACK_APP_TOKEN": current.app_token,
-        "SLACK_BOT_TOKEN": current.bot_token,
-        "SLACK_ALLOWED_USER_ID": current.allowed_user_id,
-    }
-    if not non_interactive:
-        for name in REQUIRED_ENV:
-            if not values[name]:
-                values[name] = _prompt_secret(name)
+def setup(root: Path) -> dict[str, Any]:
     if importlib.util.find_spec("slack_sdk") is None:
         raise RuntimeError("slack-sdk is not installed; install BeeLoop with the slack extra")
-    preserved = write_secrets(root, values)
     config = _require_config(root)
     client = _web_client(config)
     auth = client.auth_test()
     response = client.conversations_open(users=config.allowed_user_id)
     if not (dm_id := (response.get("channel") or {}).get("id")):
         raise RuntimeError("Slack did not return the configured owner's DM channel")
+    _enable_input(root)
     return {
         "ok": True,
         "team_id": auth.get("team_id"),
         "bot_user_id": auth.get("user_id"),
         "dm_channel": dm_id,
         "secrets_file": str(secrets_path(root)),
-        "preserved": preserved,
     }
 
 
@@ -197,6 +182,11 @@ def _web_client(config: SlackConfig) -> Any:
     return WebClient(token=config.bot_token)
 
 
+def _enable_input(root: Path) -> None:
+    adapter = root / "inputs.d" / "slack-private"
+    adapter.chmod(adapter.stat().st_mode | 0o111)
+
+
 def _fetch_context(client: Any, permalink: SlackPermalink) -> dict[str, Any]:
     thread_root_ts = permalink.thread_ts or permalink.ts
     messages = _fetch_replies_or_history(client, permalink.channel, thread_root_ts, permalink.ts)
@@ -259,12 +249,6 @@ def _download_files(
                 output.write(response.read())
             downloaded.append({"id": file_id, "path": str(local_path), "name": details.get("name")})
     return downloaded
-
-
-def _prompt_secret(name: str) -> str:
-    if "TOKEN" in name:
-        return getpass.getpass(f"{name}: ").strip()
-    return input(f"{name}: ").strip()
 
 
 def _read_text_arg(value: str) -> str:
