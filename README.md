@@ -58,8 +58,12 @@ This runs the gateway in the background, where it waits for inputs.
 
 ## Orchestrator
 
-The orchestrator is a special, stateful, event-driven agent designed to be your
-chief of staff. It delegates work, shares progress, and asks when it needs input.
+The orchestrator lives in the `orchestrator/` workspace. It is a special,
+stateful, event-driven agent designed to be your chief of staff. It delegates
+work, shares progress, and asks when it needs input.
+
+For design details, see the [orchestrator instructions](orchestrator/AGENTS.md)
+and [skills](orchestrator/.agents/skills/).
 
 Grow the orchestrator by talking to it and adding skills for workflows you
 repeat. To talk to it from the Codex or Claude Code CLI:
