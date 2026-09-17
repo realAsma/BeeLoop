@@ -1,6 +1,6 @@
 # BeeLoop
 
-BeeLoop runs long-lived, directory-backed agents that receive events and message one another.
+BeeLoop runs directory-backed agents with memory that receive events and message one another.
 
 ## Setup
 
