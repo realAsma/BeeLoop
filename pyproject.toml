@@ -9,7 +9,7 @@ description = "Long-running agents that live in a directory and are addressed by
 requires-python = ">=3.11"
 dependencies = [
     "jsonschema",
-    "mcp>=2,<3",
+    "mcp>=2",
 ]
 
 [project.optional-dependencies]
