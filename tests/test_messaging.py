@@ -9,6 +9,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -96,35 +97,36 @@ def wait_for(predicate, timeout: float = 5) -> None:
         time.sleep(0.01)
 
 
+@asynccontextmanager
+async def live_session(agent: ag.Agent | None = None):
+    # Spawned the way an installed plugin is: the file by path, the
+    # binding in the environment, nothing on the command line.
+    env = {
+        key: value for key, value in os.environ.items()
+        if key != "BEELOOP_AGENT_DIR"
+    }
+    if agent is not None:
+        env["BEELOOP_AGENT_DIR"] = str(records.agent_path(agent.agent_id).resolve())
+    parameters = StdioServerParameters(
+        command=sys.executable, args=[str(SERVER_PATH)], env=env,
+    )
+    async with stdio_client(parameters) as streams:
+        async with ClientSession(*streams) as session:
+            await session.initialize()
+            yield session
+
+
 @pytest.mark.parametrize("bound", [True, False])
 def test_the_live_server_exposes_tools_bound_and_unbound(bound, beeloop_root):
     agent = orchestrator()
 
     async def inspect_server():
-        # Spawned the way an installed plugin is: the file by path, the
-        # binding in the environment, nothing on the command line.
-        env = {
-            key: value
-            for key, value in os.environ.items()
-            if key != "BEELOOP_AGENT_DIR"
-        }
-        if bound:
-            env["BEELOOP_AGENT_DIR"] = str(
-                records.agent_path(agent.agent_id).resolve()
+        async with live_session(agent if bound else None) as session:
+            return (
+                await session.list_tools(),
+                await session.call_tool("get_agent_id"),
+                await session.call_tool("get_beeloop_root"),
             )
-        parameters = StdioServerParameters(
-            command=sys.executable,
-            args=[str(SERVER_PATH)],
-            env=env,
-        )
-        async with stdio_client(parameters) as streams:
-            async with ClientSession(*streams) as session:
-                await session.initialize()
-                return (
-                    await session.list_tools(),
-                    await session.call_tool("get_agent_id"),
-                    await session.call_tool("get_beeloop_root"),
-                )
 
     listed, identity, resolved_root = asyncio.run(inspect_server())
     assert [tool.name for tool in listed.tools] == [
@@ -138,26 +140,69 @@ def test_the_live_server_exposes_tools_bound_and_unbound(bound, beeloop_root):
         "timer_cancel",
     ]
     root_tool = listed.tools[1]
-    assert root_tool.inputSchema["properties"] == {}
-    assert "required" not in root_tool.inputSchema
+    assert root_tool.input_schema["properties"] == {}
+    assert "required" not in root_tool.input_schema
     assert resolved_root.content[0].text == str(beeloop_root.resolve())
     create = listed.tools[2]
-    assert set(create.inputSchema["properties"]) == {"role", "cwd"}
-    assert set(create.inputSchema["required"]) == {"role"}
+    assert set(create.input_schema["properties"]) == {"role", "cwd"}
+    assert set(create.input_schema["required"]) == {"role"}
     assert "without starting" in create.description
     tool = listed.tools[3]
-    message = tool.inputSchema
+    message = tool.input_schema
     assert set(message["properties"]) == {"receiver", "msg"}
     assert set(message["required"]) == {"receiver", "msg"}
     assert "fresh" in tool.description
     route = listed.tools[4]
-    assert set(route.inputSchema["properties"]) == {"source", "receiver_agent_id"}
-    assert set(route.inputSchema["required"]) == {"source", "receiver_agent_id"}
+    assert set(route.input_schema["properties"]) == {"source", "receiver_agent_id"}
+    assert set(route.input_schema["required"]) == {"source", "receiver_agent_id"}
     assert "existing agent" in route.description
     if bound:
         assert identity.content[0].text == agent.agent_id
     else:
         assert identity.content == []
+
+
+def test_live_tool_errors_keep_the_actionable_reason():
+    async def inspect_errors():
+        async with live_session() as session:
+            for name, arguments, reason in [
+                ("message", {"receiver": "missing", "msg": ""}, "msg must not be empty"),
+                ("create_agent", {"role": "missing"}, "no role 'missing'"),
+                ("timer_list", {}, "requires a bound BeeLoop agent"),
+            ]:
+                result = await session.call_tool(name, arguments)
+                assert result.is_error
+                assert reason in result.content[0].text
+
+    asyncio.run(inspect_errors())
+
+
+def test_live_timer_tools_create_list_cancel_and_report_invalid_durations():
+    agent = orchestrator()
+
+    async def inspect_timers():
+        async with live_session(agent) as session:
+            original = await session.call_tool("timer_list")
+            invalid = await session.call_tool(
+                "timer_create", {"message": "check", "after": "bad"},
+            )
+            assert invalid.is_error
+            assert "positive integer" in invalid.content[0].text
+            created = await session.call_tool(
+                "timer_create", {"message": "check", "after": "1h"},
+            )
+            assert not created.is_error
+            timer = created.structured_content
+            listed = await session.call_tool("timer_list")
+            assert timer in listed.structured_content["result"]
+            cancelled = await session.call_tool(
+                "timer_cancel", {"timer_id": timer["timer_id"]},
+            )
+            assert cancelled.content[0].text == "cancelled"
+            listed = await session.call_tool("timer_list")
+            assert listed.structured_content == original.structured_content
+
+    asyncio.run(inspect_timers())
 
 
 def test_create_agent_is_authorized_and_does_not_dispatch(beeloop_root, monkeypatch):

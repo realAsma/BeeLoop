@@ -8,42 +8,63 @@ from __future__ import annotations
 
 import os
 from dataclasses import asdict
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+
+from beeloop import timers
 from beeloop.agents import timers as agent_timers
-from beeloop.config import root as configured_root
+from beeloop.agents.records import AgentError
+from beeloop.config import ConfigError, root as configured_root
 from beeloop.dispatch import messaging
-from mcp.server.fastmcp import FastMCP
+from beeloop.dispatch.routes import RouteError
 
 MessagingError = messaging.MessagingError
 
 AGENT_DIRECTORY: Path | None = None
-mcp = FastMCP(
+mcp = MCPServer(
     "beeloop-tools",
     instructions="Messaging for BeeLoop agents and trusted direct-user sessions.",
 )
 
 
-@mcp.tool()
+def _tool(function: Callable[..., Any]) -> Callable[..., Any]:
+    """Expose expected BeeLoop failures as actionable MCP tool errors."""
+    @wraps(function)
+    def call(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return function(*args, **kwargs)
+        except (
+            MessagingError, AgentError, timers.TimerError, ConfigError, RouteError
+        ) as exc:
+            raise ToolError(str(exc)) from exc
+
+    mcp.tool()(call)
+    return function
+
+
+@_tool
 def get_agent_id() -> str | None:
     """Return this agent's ID, or None outside the BeeLoop harness."""
     return messaging.agent_id(AGENT_DIRECTORY) if AGENT_DIRECTORY else None
 
 
-@mcp.tool()
+@_tool
 def get_beeloop_root() -> str:
     """Return the configured absolute BeeLoop root."""
     return str(configured_root())
 
 
-@mcp.tool()
+@_tool
 def create_agent(role: str, cwd: str | None = None) -> dict[str, str]:
     """Create an authorized agent without starting its first model turn."""
     return messaging.create_agent(AGENT_DIRECTORY, role, cwd)
 
 
-@mcp.tool()
+@_tool
 def message(receiver: str | dict[str, Any], msg: str) -> dict[str, str]:
     """Asynchronously send a message to an agent ID or role route.
 
@@ -56,13 +77,13 @@ def message(receiver: str | dict[str, Any], msg: str) -> dict[str, str]:
     return messaging.send(AGENT_DIRECTORY, receiver, msg)
 
 
-@mcp.tool()
+@_tool
 def route_source(source: str, receiver_agent_id: str) -> dict[str, str]:
     """Route one persistent input source owned by this agent to an existing agent."""
     return messaging.route_source(_agent_directory(), source, receiver_agent_id)
 
 
-@mcp.tool()
+@_tool
 def timer_create(
     message: str,
     after: str | None = None,
@@ -80,7 +101,7 @@ def timer_create(
     return asdict(timer)
 
 
-@mcp.tool()
+@_tool
 def timer_list() -> list[dict[str, Any]]:
     """List this agent's wake timers in due order."""
     return [
@@ -89,7 +110,7 @@ def timer_list() -> list[dict[str, Any]]:
     ]
 
 
-@mcp.tool()
+@_tool
 def timer_cancel(timer_id: str) -> str:
     """Cancel one of this agent's wake timers."""
     removed = agent_timers.cancel_wake(
