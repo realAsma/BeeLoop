@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,6 +34,37 @@ from slack_private.input import format_envelope  # noqa: E402
 from slack_private.listener import SlackIdentity, validate_events_api_payload  # noqa: E402
 
 IDENTITY = SlackIdentity(team_id="T123", bot_user_id="UBOT")
+
+
+@pytest.mark.parametrize("bound", [True, False])
+def test_helper_keeps_beeloop_interpreter_after_shell_path_reset(tmp_path, bound):
+    pytest.importorskip("slack_sdk")
+    helper = tmp_path / "source" / "slack-private"
+    helper.parent.mkdir()
+    shutil.copy2(SOURCE_ROOT / "slack-private", helper)
+    package = helper.parent / "slack_private"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "cli.py").write_text(
+        "import sys\nimport beeloop\nimport slack_sdk\nprint(sys.executable)\n"
+    )
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    python = binaries / "python3"
+    python.write_text("#!/bin/sh\nexit 99\n")
+    python.chmod(0o755)
+    beeloop = binaries / "beeloop"
+    beeloop.symlink_to(Path(sys.executable).with_name("beeloop"))
+    env = {**os.environ, "PATH": f"{binaries}:/usr/bin:/bin"}
+    env.pop("BEELOOP_PYTHON", None)
+    if bound:
+        env["BEELOOP_PYTHON"] = sys.executable
+        beeloop.unlink()
+
+    result = subprocess.run([str(helper)], env=env, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == sys.executable
 
 
 def event_payload(**overrides):

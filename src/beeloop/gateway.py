@@ -118,6 +118,7 @@ def _dispatch(envelope: bytes, root: Path, log_path: Path) -> None:
 def _environment() -> dict[str, str]:
     return {
         **os.environ,
+        "BEELOOP_PYTHON": sys.executable,
         "PATH": str(Path(sys.executable).parent)
         + os.pathsep + os.environ.get("PATH", ""),
     }

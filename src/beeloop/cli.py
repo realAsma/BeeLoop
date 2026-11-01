@@ -16,12 +16,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("root", help="print the configured deployment root")
+    commands.add_parser("python", help="print the Python interpreter running BeeLoop")
     args = parser.parse_args(argv)
 
     try:
         root = configured_root()
         if args.command == "root":
             print(root)
+            return 0
+        if args.command == "python":
+            print(sys.executable)
             return 0
         return run_gateway(root)
     except (ConfigError, GatewayError, OSError) as exc:

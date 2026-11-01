@@ -6,6 +6,10 @@ reach the router, which connects them to an existing or new orchestrator.
 Connected threads go directly to their orchestrator. Message bodies and file
 bytes are fetched only after intake authentication.
 
+The helper uses the gateway's `BEELOOP_PYTHON` interpreter even when an agent's
+shell changes `PATH`. Outside the gateway, it uses `beeloop python` to find the
+installed BeeLoop environment. Install the Slack extra in that environment.
+
 `reply` and `upload` answer inside a thread this input authenticated. The
 `dm-thread` helper is the one outbound path with no inbound event behind it: it
 opens a new thread in the owner's DM for scheduled work the owner configured,
