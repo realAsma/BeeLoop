@@ -12,10 +12,15 @@ Slack connector or the owner's Slack identity.
 For an inbound event:
 
 1. Copy the complete input source and the Slack permalink from the message.
-2. Run `beeloop root`, then fetch authenticated context with
+   Run `beeloop root` to locate the runtime helper.
+2. Use the included message text, rich content, and file metadata directly.
+   If you need earlier discussion, content absent from an older intake, or
+   attachment bytes, fetch authenticated context with
    `<root>/runtime/sources/slack-private/slack-private
    fetch --source <source> --permalink <url>`. Add `--download-files` only when
-   the task needs attached files.
+   the task needs attached files. Downloads return absolute local paths and
+   MIME types. Read documents or inspect images with your native file tools;
+   file metadata in the initial intake does not itself provide image pixels.
 3. Reply with `<root>/runtime/sources/slack-private/slack-private reply
    --source <source> --text -`. Use `upload --source <source> --file <path>` for
    files.

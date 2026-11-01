@@ -54,7 +54,7 @@ def validate_events_api_payload(
         if _supported_file(file_info)
     ]
     has_text = bool(str(event.get("text") or "").strip())
-    if not has_text and not files:
+    if not has_text and not files and not event.get("blocks") and not event.get("attachments"):
         return None
 
     channel = event.get("channel")
@@ -75,6 +75,7 @@ def validate_events_api_payload(
         "event_id": event_id,
         "files": files,
         "has_text": has_text,
+        **{field: event[field] for field in ("text", "blocks", "attachments") if field in event},
     }
 
 

@@ -228,6 +228,7 @@ def _download_files(
     messages: list[dict[str, Any]],
     target_dir: Path,
 ) -> list[dict[str, Any]]:
+    target_dir = target_dir.resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
     downloaded: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -247,7 +248,12 @@ def _download_files(
             request = urllib.request.Request(url, headers={"Authorization": f"Bearer {bot_token}"})
             with urllib.request.urlopen(request) as response, local_path.open("wb") as output:
                 output.write(response.read())
-            downloaded.append({"id": file_id, "path": str(local_path), "name": details.get("name")})
+            downloaded.append({
+                "id": file_id,
+                "path": str(local_path),
+                "name": details.get("name"),
+                "mimetype": details.get("mimetype"),
+            })
     return downloaded
 
 

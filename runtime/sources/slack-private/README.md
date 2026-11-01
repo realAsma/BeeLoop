@@ -3,8 +3,12 @@
 This source connects BeeLoop to one configured Slack user through Socket Mode.
 It accepts only private `message.im` events from that user. New Slack threads
 reach the router, which connects them to an existing or new orchestrator.
-Connected threads go directly to their orchestrator. Message bodies and file
-bytes are fetched only after intake authentication.
+Connected threads go directly to their orchestrator. Authenticated intake
+includes message text and links, rich blocks and attachments, and file metadata
+(including image files), so handling ordinary messages needs no extra fetch.
+File-only and image-only messages are accepted. The helper can fetch fuller
+thread context and download file bytes when needed, returning absolute paths
+for native document and image tools. Initial metadata does not inline images.
 
 The helper uses the gateway's `BEELOOP_PYTHON` interpreter even when an agent's
 shell changes `PATH`. Outside the gateway, it uses `beeloop python` to find the

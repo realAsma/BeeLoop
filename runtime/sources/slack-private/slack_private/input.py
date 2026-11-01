@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -41,6 +42,11 @@ def main() -> int:
 
 
 def format_envelope(record: dict[str, object]) -> str:
+    content = {
+        field: record[field]
+        for field in ("text", "blocks", "attachments", "files")
+        if field in record
+    }
     return "\n".join(
         [
             "role=router",
@@ -48,7 +54,8 @@ def format_envelope(record: dict[str, object]) -> str:
             f"source={record['source']}",
             "msg=Authenticated private Slack DM from the configured owner.",
             f"Message: {record['permalink']}",
-            "Use the slack-private source skill to fetch the message and deliver every response.",
+            f"Slack content (JSON): {json.dumps(content, ensure_ascii=False)}",
+            "Use the included content. The slack-private source skill provides optional full context and file downloads, and handles every reply.",
         ]
     )
 
