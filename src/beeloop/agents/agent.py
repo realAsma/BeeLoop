@@ -195,16 +195,14 @@ class Agent:
             return batch
         return [session_ttl.init_input(prompt), *batch]
 
-    def _turn(self, batch: Sequence[InputItem], *, recover: bool = True) -> Delivery:
+    def _turn(self, batch: Sequence[InputItem]) -> Delivery:
         try:
             delivery = self.backend.deliver(self.session(), batch)
         except BackendError as exc:
             if self.backend.classify(str(exc)) != "terminal":
                 raise
             self.on_terminal(exc)
-            if not recover:
-                raise
-            return self._wake_session(batch, recover=False)
+            raise
         self._record_delivery(delivery, move_ttl=True)
         return delivery
 
@@ -246,9 +244,7 @@ class Agent:
         outcome = "saved" if saved else "failed"
         return Delivery(text=f"session TTL expired; handoff {outcome}")
 
-    def _wake_session(
-        self, inputs: Sequence[InputItem], *, recover: bool = True
-    ) -> Delivery:
+    def _wake_session(self, inputs: Sequence[InputItem]) -> Delivery:
         stamp = now()
         session_id = self.backend.open()
         expiry_prompt = self.role.prompt(
@@ -286,7 +282,7 @@ class Agent:
             else list(inputs)
         )
         try:
-            delivery = self._turn(batch, recover=recover)
+            delivery = self._turn(batch)
         except BackendError:
             self._detach_session()
             raise
@@ -310,8 +306,7 @@ class Agent:
         """Close an agent whose backend session cannot be resumed."""
         self.record = self._update({"status": CLOSED})
         raise NotResumable(
-            f"agent {self.agent_id} lost its session and has no task to be "
-            f"briefed from, so it is closed: {exc}"
+            f"agent {self.agent_id} lost its session, so it is closed: {exc}"
         ) from exc
 
     def session(self) -> Session:
@@ -333,31 +328,7 @@ class Agent:
         self.record = self._update({"status": CLOSED})
 
 
-class PersistentAgent(Agent):
-    """Recover unexpected session loss instead of closing the logical agent.
-
-    TTL handles planned expiry; ordinary agents close on terminal backend loss.
-    """
-
-    def on_terminal(self, exc: BackendError) -> None:
-        handoff = session_ttl.read_handoff(self.agent_id)
-        recovery = self.role.prompt(
-            "session_recover", "Recover this agent's saved state before continuing."
-        )
-        if not handoff:
-            session_ttl.write_handoff(
-                self.agent_id,
-                f"The previous backend session was lost. Agent ID: {self.agent_id}. "
-                f"Workspace: {self.cwd}.\n{recovery or ''}",
-            )
-
-        self._detach_session()
-
-
-REGISTRY: dict[str, type[Agent]] = {
-    Agent.__name__: Agent,
-    PersistentAgent.__name__: PersistentAgent,
-}
+REGISTRY: dict[str, type[Agent]] = {Agent.__name__: Agent}
 
 
 def register(cls: type[Agent]) -> None:

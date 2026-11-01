@@ -28,6 +28,13 @@ Its Codex policy overrides use the [setup's](../README.md#setup) plugin IDs and
 bundled `state` server name; adjust those paths if your deployment names them
 differently.
 
+The router has no heartbeat or idle expiry. Its backend session rotates after
+three weeks (`session_ttl.max_age = "21d"` in its role configuration). Rotation
+keeps the logical router ID: expiry returns a read-only routing handoff, and the
+next intake starts a session that rediscovers orchestrators and source mappings.
+TTL policy is snapshotted when an agent is created; changing it for an existing
+deployment also requires updating that agent's runtime configuration and timer.
+
 Orchestrators in `orchestrator/` act as event-driven chiefs of staff: they
 coordinate related intakes as their scope evolves, delegate work, share
 progress, and maintain one overall BeeLoop State record each. Agent operations
@@ -48,9 +55,8 @@ or `claude plugin update beeloop-tools@beeloop-tools`).
 
 For existing deployments, copy effective `orchestrator` intake mappings to the
 router intake key (router role, workspace, backend, and `default` instance),
-preserving recipient IDs. Set retained router and orchestrator records to type
-`PersistentAgent` for same-ID recovery after backend session loss. Keep old
-mappings for rollback. New deployments need no migration.
+preserving recipient IDs. Keep old mappings for rollback. New deployments need
+no migration.
 
 Start the gateway with the Python environment where BeeLoop and its source
 dependencies are installed; input adapters inherit that environment's executables.

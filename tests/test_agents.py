@@ -180,10 +180,6 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
             "This is a new session for existing work. Use the BeeLoop State continue "
             "flow with the previous session handoff below."
         ),
-        "session_recover": (
-            "Recover your overall BeeLoop State record named orchestrator-<your-agent-id> "
-            "in your current working directory, then continue the pending intake."
-        ),
         "heartbeat": "This is a heartbeat. Use the heartbeat flow.",
     }
     assert config["allowed_receivers"]["roles"] == ["*"]
@@ -195,7 +191,7 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
     assert "`event-driven-operation` skill" in instructions
     assert "`worker-delegation` skill" in instructions
     assert "an uplifting chief of staff and personal assistant" in soul
-    assert role.type == "PersistentAgent"
+    assert role.type == "Agent"
     assert (workspace / ".gitignore").read_text(encoding="utf-8") == (
         "/secrets.env\n/SOUL.md\n/MEMORY.md\n/agent_art/\n/workspaces/\n"
     )
@@ -233,7 +229,7 @@ def test_role_prompts_are_an_open_string_registry(beeloop_root):
 
 def test_router_configuration_and_instructions_are_available(beeloop_root):
     role = ag.load_role("router")
-    assert role.type == "PersistentAgent"
+    assert role.type == "Agent"
     assert role.cwd == beeloop_root / "router"
     assert role.options["model"] == "gpt-6.1-terra"
     assert (role.cwd / "AGENTS.md").is_file()

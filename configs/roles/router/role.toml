@@ -1,5 +1,4 @@
 backend = "codex"
-type = "PersistentAgent"
 permissions = "read"
 cwd = "router"
 
@@ -15,6 +14,10 @@ model = "gpt-6.1-terra"
 [allowed_receivers]
 roles = ["orchestrator"]
 
+[session_ttl]
+max_age = "21d"
+
 [prompts]
 session_init = "Read AGENTS.md and connect the incoming sources to an orchestrator."
-session_recover = "Read AGENTS.md and discover current orchestrators and source mappings with list_agents before routing the pending intake."
+session_expire = "Return a concise routing handoff only. Do not write BeeLoop State, delegate work, or change source mappings."
+session_resume = "Read AGENTS.md, discover current orchestrators and source mappings with list_agents, then continue the pending intake using the routing handoff below."
