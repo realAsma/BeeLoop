@@ -38,8 +38,7 @@ from slack_private.listener import SlackIdentity, validate_events_api_payload  #
 IDENTITY = SlackIdentity(team_id="T123", bot_user_id="UBOT")
 
 
-@pytest.mark.parametrize("bound", [True, False])
-def test_helper_keeps_beeloop_interpreter_after_shell_path_reset(tmp_path, bound):
+def test_helper_keeps_beeloop_interpreter_after_shell_path_reset(tmp_path):
     pytest.importorskip("slack_sdk")
     helper = tmp_path / "source" / "slack-private"
     helper.parent.mkdir()
@@ -55,13 +54,11 @@ def test_helper_keeps_beeloop_interpreter_after_shell_path_reset(tmp_path, bound
     python = binaries / "python3"
     python.write_text("#!/bin/sh\nexit 99\n")
     python.chmod(0o755)
-    beeloop = binaries / "beeloop"
-    beeloop.symlink_to(Path(sys.executable).with_name("beeloop"))
-    env = {**os.environ, "PATH": f"{binaries}:/usr/bin:/bin"}
-    env.pop("BEELOOP_PYTHON", None)
-    if bound:
-        env["BEELOOP_PYTHON"] = sys.executable
-        beeloop.unlink()
+    env = {
+        **os.environ,
+        "PATH": f"{binaries}:/usr/bin:/bin",
+        "BEELOOP_PYTHON": sys.executable,
+    }
 
     result = subprocess.run([str(helper)], env=env, capture_output=True, text=True)
 

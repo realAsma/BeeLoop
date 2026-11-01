@@ -37,11 +37,6 @@ def test_help_explains_the_bare_command(capsys):
     assert "Run the BeeLoop gateway" in capsys.readouterr().out
 
 
-def test_python_command_reports_the_running_interpreter(capsys):
-    assert cli.main(["python"]) == 0
-    assert capsys.readouterr().out.strip() == sys.executable
-
-
 def test_run_prepares_the_root_and_stops_cleanly(beeloop_root: Path, monkeypatch):
     polls = []
 

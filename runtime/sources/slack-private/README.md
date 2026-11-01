@@ -9,8 +9,8 @@ thread context and download file bytes when needed, returning absolute paths
 for native document and image tools. Initial metadata does not inline images.
 
 The helper uses the gateway's `BEELOOP_PYTHON` interpreter even when an agent's
-shell changes `PATH`. Outside the gateway, it uses `beeloop python` to find the
-installed BeeLoop environment. Install the Slack extra in that environment.
+shell changes `PATH`. Outside the gateway, it uses `python3`; run the helper in
+the Python environment where BeeLoop and its Slack extra are installed.
 
 `reply` and `upload` answer inside a thread this input authenticated. The
 `dm-thread` helper is the one outbound path with no inbound event behind it: it
