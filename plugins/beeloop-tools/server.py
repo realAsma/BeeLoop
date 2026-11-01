@@ -1,7 +1,6 @@
 """MCP tools for asynchronous BeeLoop messaging.
 
-When present, `BEELOOP_AGENT_DIR` binds calls to a harness-managed agent.
-Without it, creation and messaging are trusted direct-user operations.
+`BEELOOP_AGENT_DIR` binds operations to a harness-managed agent.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ MessagingError = messaging.MessagingError
 AGENT_DIRECTORY: Path | None = None
 mcp = MCPServer(
     "beeloop-tools",
-    instructions="Messaging for BeeLoop agents and trusted direct-user sessions.",
+    instructions="Messaging for harness-bound BeeLoop agents.",
 )
 
 
@@ -61,7 +60,23 @@ def get_beeloop_root() -> str:
 @_tool
 def create_agent(role: str, cwd: str | None = None) -> dict[str, str]:
     """Create an authorized agent without starting its first model turn."""
-    return messaging.create_agent(AGENT_DIRECTORY, role, cwd)
+    return messaging.create_agent(_agent_directory(), role, cwd)
+
+
+@_tool
+def delegate_worker(
+    cwd: str,
+    assignment: str,
+    worker_id: str | None = None,
+    save_state: bool = False,
+) -> dict[str, str]:
+    """Dispatch a standard assignment to a new or reused worker of this orchestrator.
+
+    The runtime authorizes the exact caller callback and supplies worker
+    execution, verification, and reporting instructions. Set save_state only
+    when a durable worker record would be useful. Acceptance is asynchronous.
+    """
+    return messaging.delegate_worker(_agent_directory(), cwd, assignment, worker_id, save_state)
 
 
 @_tool
@@ -74,7 +89,7 @@ def message(receiver: str | dict[str, Any], msg: str) -> dict[str, str]:
     An accepted result identifies the resolved receiver and confirms background
     dispatch, not model completion.
     """
-    return messaging.send(AGENT_DIRECTORY, receiver, msg)
+    return messaging.send(_agent_directory(), receiver, msg)
 
 
 @_tool
@@ -86,13 +101,7 @@ def route_source(source: str, receiver_agent_id: str) -> dict[str, str]:
 @_tool
 def list_agents() -> list[dict[str, Any]]:
     """List permitted BeeLoop agents for routing and conversation discovery."""
-    return messaging.list_agents(AGENT_DIRECTORY)
-
-
-@_tool
-def read_agent(receiver_agent_id: str) -> dict[str, Any]:
-    """Read a permitted agent's status and latest response without waiting."""
-    return messaging.read_agent(AGENT_DIRECTORY, receiver_agent_id)
+    return messaging.list_agents(_agent_directory())
 
 
 @_tool

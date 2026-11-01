@@ -1,4 +1,4 @@
-"""Asynchronous messaging for BeeLoop agents and direct-user sessions."""
+"""Authorized asynchronous messaging for harness-bound BeeLoop agents."""
 
 from __future__ import annotations
 
@@ -8,11 +8,13 @@ import sys
 import tomllib
 from dataclasses import dataclass
 from functools import partial
+from importlib.resources import files
 from pathlib import Path
+from string import Template
 from typing import Any
 
 from beeloop import agents as ag
-from beeloop.agents.records import agent_path, root
+from beeloop.agents.records import root
 from beeloop.agents.roles import load_role, workspace
 from beeloop.dispatch.envelope import Envelope, serialize
 from beeloop.dispatch.routes import (
@@ -47,8 +49,6 @@ class AllowedReceivers:
 
 
 ROUTE_FIELDS = frozenset({"role", "cwd", "instance"})
-DIRECT_SOURCE = "user:direct"
-DIRECT_RECEIVERS = AllowedReceivers(frozenset({"*"}), frozenset())
 
 
 def agent_id(sender_directory: Path) -> str:
@@ -57,7 +57,7 @@ def agent_id(sender_directory: Path) -> str:
 
 
 def create_agent(
-    sender_directory: Path | None,
+    sender_directory: Path,
     role: str,
     cwd: str | None = None,
 ) -> dict[str, str]:
@@ -71,8 +71,56 @@ def create_agent(
     }
 
 
+def delegate_worker(
+    sender_directory: Path,
+    cwd: str,
+    assignment: str,
+    worker_id: str | None = None,
+    save_state: bool = False,
+) -> dict[str, str]:
+    """Create or reuse a caller's worker and dispatch a standard assignment."""
+    sender = _identity(sender_directory)
+    if sender["role"] != "orchestrator":
+        raise MessagingError("worker delegation requires a bound orchestrator")
+    if not isinstance(cwd, str) or not cwd.strip():
+        raise MessagingError("cwd must be a non-empty string")
+    if not isinstance(assignment, str) or not assignment.strip():
+        raise MessagingError("assignment must not be empty")
+    if worker_id is not None and (not isinstance(worker_id, str) or not worker_id):
+        raise MessagingError("worker_id must be a non-empty agent ID")
+    if not isinstance(save_state, bool):
+        raise MessagingError("save_state must be a boolean")
+
+    where = workspace(load_role("worker"), cwd)
+    assets = files("beeloop.agents").joinpath("assets")
+    template = Template(assets.joinpath("worker-assignment.md").read_text(encoding="utf-8"))
+    state_request = assets.joinpath("worker-state.md").read_text(encoding="utf-8") if save_state else ""
+    payload = template.substitute(
+        assignment=assignment,
+        cwd=str(where),
+        delegator_id=sender["agent_id"],
+        state_request=state_request,
+    )
+    allowed = _receiver_policy(sender_directory)
+    if worker_id is None:
+        worker = _create(
+            allowed, "worker", cwd=str(where), delegator_agent_id=sender["agent_id"]
+        )
+    else:
+        worker = ag.restore(worker_id)
+        if not allowed.allows(worker.record["role"], worker.agent_id):
+            raise MessagingError(f"may not delegate to worker {worker_id!r}")
+        if worker.record["role"] != "worker" or worker.record.get("delegator_agent_id") != sender["agent_id"]:
+            raise MessagingError("reuse requires a worker created by this orchestrator's delegate_worker")
+        if worker.cwd != where:
+            raise MessagingError("a reused worker must have the requested cwd")
+        if worker.status == "closed":
+            raise MessagingError("cannot reuse a closed worker")
+    return send(sender_directory, worker.agent_id, payload)
+
+
 def send(
-    sender_directory: Path | None,
+    sender_directory: Path,
     receiver: str | dict[str, Any],
     msg: str,
 ) -> dict[str, str]:
@@ -80,12 +128,8 @@ def send(
     if not msg.strip():
         raise MessagingError("msg must not be empty")
 
-    if sender_directory is None:
-        sender_id = DIRECT_SOURCE
-        source = DIRECT_SOURCE
-    else:
-        sender_id = _identity(sender_directory)["agent_id"]
-        source = f"agent:{sender_id}"
+    sender_id = _identity(sender_directory)["agent_id"]
+    source = f"agent:{sender_id}"
     recipient = _resolve(
         receiver, sender_id, source, _receiver_policy(sender_directory)
     )
@@ -139,25 +183,7 @@ def route_source(
     }
 
 
-def read_agent(sender_directory: Path | None, receiver_agent_id: str) -> dict[str, Any]:
-    """Read a permitted agent's status and latest turn response."""
-    receiver = ag.restore(receiver_agent_id)
-    allowed = _receiver_policy(sender_directory)
-    if not allowed.allows(receiver.record["role"], receiver.agent_id):
-        raise MessagingError(f"may not read agent {receiver_agent_id!r}")
-    response_path = agent_path(receiver.agent_id) / "response.json"
-    response = json.loads(response_path.read_text("utf-8")) if response_path.exists() else None
-    return {
-        "agent_id": receiver.agent_id,
-        "role": receiver.record["role"],
-        "cwd": str(receiver.cwd),
-        "status": receiver.status,
-        "turns": receiver.record["turns"],
-        "response": response,
-    }
-
-
-def list_agents(sender_directory: Path | None) -> list[dict[str, Any]]:
+def list_agents(sender_directory: Path) -> list[dict[str, Any]]:
     """List permitted agents for routing and conversation discovery."""
     allowed = _receiver_policy(sender_directory)
     agents = []
@@ -205,10 +231,11 @@ def _allowed_receivers(path: Path) -> AllowedReceivers:
     return AllowedReceivers(frozenset(roles), frozenset(ids))
 
 
-def _receiver_policy(sender_directory: Path | None) -> AllowedReceivers:
-    if sender_directory is None:
-        return DIRECT_RECEIVERS
-    return _allowed_receivers(sender_directory / "config.toml")
+def _receiver_policy(sender_directory: Path) -> AllowedReceivers:
+    allowed = _allowed_receivers(sender_directory / "config.toml")
+    record = json.loads((sender_directory / "record.json").read_text("utf-8"))
+    callback = record.get("delegator_agent_id") if record["role"] == "worker" else None
+    return AllowedReceivers(allowed.roles, allowed.ids | {callback}) if callback else allowed
 
 
 def _string_list(value: Any, path: Path, field: str) -> list[str]:

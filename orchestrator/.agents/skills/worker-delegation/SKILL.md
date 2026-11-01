@@ -1,23 +1,34 @@
 ---
 name: worker-delegation
-description: Create and launch BeeLoop workers with authorized result callbacks. Use when creating, launching, or delegating work to a worker.
+description: Choose and dispatch BeeLoop workers with runtime-supplied assignment instructions and authorized result callbacks.
 ---
 
 # Worker delegation
 
-- Get your agent ID with `get_agent_id()`.
-- Create a worker with `create_agent(role="worker", cwd=...)`, or reuse one
-  whose context is useful for the assignment.
-- Get `<root>` with `get_beeloop_root()`.
-- Add your agent ID into `allowed_receivers.ids` in the worker's
-  snapshotted `<root>/runtime/agents/<worker-id>/config.toml`; preserve all
-  other TOML content and validate the exact file.
-- Message the exact worker ID with clear scope, context, deliverables, and
-  checks. Ask it to execute and verify the work, then return delivery-ready
-  results with relevant evidence, artifacts, and any remaining limitations.
-  Give it room to organize execution and use native subagents as needed.
-  Ask it to message your ID with its result or blocker. When its work may be
-  useful later, explicitly request `beeloop-state:save` and its record's
-  `work_name` and `cwd`; retain a summary and reference in your own state.
-- Retain the worker ID and end your turn. Do not wait for the worker's turn to
-  finish.
+## Choosing workers
+
+Give workers coherent scopes and the relevant project workspace. Reuse one when
+its context helps; start fresh for independent work. Workers can organize their
+own execution and use native subagents or parallel work as needed.
+
+## Dispatch and results
+
+Call `delegate_worker(cwd=..., assignment=...)` with the specific scope, context,
+deliverables, and checks. The runtime creates the worker, authorizes your exact
+callback, and supplies standard execution, verification, and reporting
+instructions from its assignment template. You do not need to rewrite that
+boilerplate or edit worker permissions.
+
+To reuse a worker previously created for you by this tool, pass its `worker_id`
+and the same workspace.
+
+Retain `receiver_agent_id` and end your turn; acceptance confirms dispatch, not
+completion. Stay available for intake. Workers send delivery-ready results or
+blockers back to you; communicate them through relevant sources.
+
+## Worker state
+
+When a worker's work may be useful later, set `save_state=true` on delegation.
+The template then explicitly asks it to use `beeloop-state:save` and return its
+record's `work_name` and `cwd`. Keep a brief summary and that reference in your
+overall record for future sessions. Otherwise the worker simply returns results.

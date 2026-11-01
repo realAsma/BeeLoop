@@ -65,6 +65,10 @@ New external conversations enter one persistent router in `router/`. It connects
 related intake to an existing orchestrator or creates one. Once connected,
 later events go directly to that orchestrator. Configure the router's model in
 `configs/roles/router/role.toml`.
+The router uses a read-only filesystem sandbox and explicitly approved routing
+and state-reading MCP tools. Its Codex tool-policy overrides assume the plugin
+IDs and bundled `state` server names shown in setup; update those paths if your
+deployment names them differently.
 
 ## Orchestrator
 
@@ -76,11 +80,14 @@ shares progress, and maintains one overall BeeLoop State record.
 For design details, see the [orchestrator instructions](orchestrator/AGENTS.md)
 and [skills](orchestrator/.agents/skills/).
 
-Grow the orchestrator by talking to it and adding skills for workflows you
-repeat. From a Codex or Claude Code CLI with BeeLoop Tools installed, invoke
-the `assign-beebot` skill to assign work explicitly. The skill creates an
-orchestrator and retains its agent ID for direct follow-ups. `read_agent`
-retrieves its latest response; assignment is asynchronous.
+Grow the orchestrator by talking to it through connected inputs and adding
+skills for workflows you repeat. BeeLoop agent operations require a
+harness-bound caller.
+
+Orchestrators dispatch workers with `delegate_worker`. The runtime supplies the
+standard assignment instructions and exact caller callback permission. An
+optional `save_state` flag requests a durable worker record for future use;
+reuse through this tool is limited to its caller's own delegated workers.
 
 After updating BeeLoop Tools, refresh the installed plugin so its copied server
 and skills match this checkout (`codex plugin add beeloop-tools@beeloop-tools`

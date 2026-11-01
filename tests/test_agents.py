@@ -80,7 +80,7 @@ def test_an_empty_directory_is_a_working_role(beeloop_root):
     ("name", "backend", "permissions", "cwd"),
     [
         ("orchestrator", "codex", "approve_for_me", "orchestrator"),
-        ("router", "codex", "approve_for_me", "router"),
+        ("router", "codex", "read", "router"),
         ("worker", "claude_code", "approve_for_me", None),
         ("planner", "claude_code", "read", None),
     ],
@@ -231,15 +231,13 @@ def test_role_prompts_are_an_open_string_registry(beeloop_root):
     assert role.prompt("missing") is None
 
 
-def test_router_configuration_and_assignment_skill_are_available(beeloop_root):
+def test_router_configuration_and_instructions_are_available(beeloop_root):
     role = ag.load_role("router")
     assert role.type == "PersistentAgent"
     assert role.cwd == beeloop_root / "router"
     assert role.options["model"] == "gpt-6.1-terra"
     assert (role.cwd / "AGENTS.md").is_file()
     assert (role.cwd / "CLAUDE.md").read_text().strip() == "@AGENTS.md"
-    assignment = SOURCE / "plugins/beeloop-tools/skills/assign-beebot/SKILL.md"
-    assert assignment.is_file()
 
 
 @pytest.mark.parametrize("config", ['prompts = "no"\n', "[prompts]\nbad = 1\n"])

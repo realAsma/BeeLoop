@@ -6,7 +6,7 @@
       "name": "beeloop-tools",
       "source": "./plugins/beeloop-tools",
       "description": "Asynchronous messaging and wake timers for BeeLoop agents.",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "category": "productivity",
       "keywords": ["messaging", "agents", "routing", "timers", "beeloop"]
     }

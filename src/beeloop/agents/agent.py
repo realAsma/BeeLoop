@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, ClassVar, Mapping, Sequence
 
@@ -222,10 +221,6 @@ class Agent:
                 session_ttl.move(record, self.ttl_policy)
 
         self.record = records.modify(self.agent_id, self.SCHEMA, change)
-        write_file(
-            agent_path(self.agent_id) / "response.json",
-            json.dumps({"turn": self.record["turns"], "text": delivery.text}),
-        )
 
     def _expire_session(self, item: InputItem) -> Delivery:
         old_session = self.session()
@@ -339,7 +334,10 @@ class Agent:
 
 
 class PersistentAgent(Agent):
-    """Keep a logical agent alive when its backend session is lost."""
+    """Recover unexpected session loss instead of closing the logical agent.
+
+    TTL handles planned expiry; ordinary agents close on terminal backend loss.
+    """
 
     def on_terminal(self, exc: BackendError) -> None:
         handoff = session_ttl.read_handoff(self.agent_id)

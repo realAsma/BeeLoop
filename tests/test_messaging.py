@@ -20,7 +20,6 @@ import beeloop.dispatch.dispatch as dsp
 from beeloop import agents as ag
 from beeloop.agents import records
 from beeloop.agents.backends import fake
-from beeloop.agents.backends.base import InputItem
 from beeloop.dispatch import messaging
 from beeloop.dispatch.envelope import Envelope
 from beeloop.dispatch.routes import Route
@@ -118,7 +117,7 @@ async def live_session(agent: ag.Agent | None = None):
 
 
 @pytest.mark.parametrize("bound", [True, False])
-def test_the_live_server_exposes_tools_bound_and_unbound(bound, beeloop_root):
+def test_server_introspection_with_and_without_agent_binding(bound, beeloop_root):
     agent = orchestrator()
 
     async def inspect_server():
@@ -134,10 +133,10 @@ def test_the_live_server_exposes_tools_bound_and_unbound(bound, beeloop_root):
         "get_agent_id",
         "get_beeloop_root",
         "create_agent",
+        "delegate_worker",
         "message",
         "route_source",
         "list_agents",
-        "read_agent",
         "timer_create",
         "timer_list",
         "timer_cancel",
@@ -150,12 +149,16 @@ def test_the_live_server_exposes_tools_bound_and_unbound(bound, beeloop_root):
     assert set(create.input_schema["properties"]) == {"role", "cwd"}
     assert set(create.input_schema["required"]) == {"role"}
     assert "without starting" in create.description
-    tool = listed.tools[3]
+    by_name = {tool.name: tool for tool in listed.tools}
+    delegate = by_name["delegate_worker"].input_schema
+    assert set(delegate["properties"]) == {"cwd", "assignment", "worker_id", "save_state"}
+    assert set(delegate["required"]) == {"cwd", "assignment"}
+    tool = by_name["message"]
     message = tool.input_schema
     assert set(message["properties"]) == {"receiver", "msg"}
     assert set(message["required"]) == {"receiver", "msg"}
     assert "fresh" in tool.description
-    route = listed.tools[4]
+    route = by_name["route_source"]
     assert set(route.input_schema["properties"]) == {"source", "receiver_agent_id"}
     assert set(route.input_schema["required"]) == {"source", "receiver_agent_id"}
     assert "existing agent" in route.description
@@ -169,9 +172,11 @@ def test_live_tool_errors_keep_the_actionable_reason():
     async def inspect_errors():
         async with live_session() as session:
             for name, arguments, reason in [
-                ("message", {"receiver": "missing", "msg": ""}, "msg must not be empty"),
-                ("create_agent", {"role": "missing"}, "no role 'missing'"),
+                ("message", {"receiver": "missing", "msg": ""}, "requires a bound BeeLoop agent"),
+                ("create_agent", {"role": "missing"}, "requires a bound BeeLoop agent"),
+                ("list_agents", {}, "requires a bound BeeLoop agent"),
                 ("timer_list", {}, "requires a bound BeeLoop agent"),
+                ("delegate_worker", {"cwd": "project", "assignment": "work"}, "requires a bound BeeLoop agent"),
             ]:
                 result = await session.call_tool(name, arguments)
                 assert result.is_error
@@ -247,21 +252,116 @@ def test_create_agent_requires_role_creation_permission(beeloop_root):
     assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
 
 
-def test_unbound_create_agent_is_a_trusted_user_operation(beeloop_root):
-    make_role(
-        beeloop_root,
-        "target",
-        'backend = "fake"\ncwd = "workspaces/target"\n',
-    )
+def test_delegation_renders_assignment_and_grants_only_exact_callback(beeloop_root, monkeypatch):
+    worker_config = 'backend = "fake"\npermissions = "read"\n[backend_options.fake]\nmarker = "preserved"\n'
+    make_role(beeloop_root, "worker", worker_config)
+    sender = orchestrator(backend="fake")
+    bind(sender)
+    submitted = []
+    monkeypatch.setattr(messaging, "_submit", submitted.append)
+    assignment = "Investigate $literal, verify the result, and return its artifacts."
 
-    result = server.create_agent("target")
+    result = server.delegate_worker("workspaces/project", assignment)
 
-    created = ag.restore(result["agent_id"])
-    assert result == {
-        "agent_id": created.agent_id,
-        "role": "target",
-        "cwd": str((beeloop_root / "workspaces" / "target").resolve()),
-    }
+    worker = ag.restore(result["receiver_agent_id"])
+    directory = records.agent_path(worker.agent_id)
+    assert worker.record["delegator_agent_id"] == sender.agent_id
+    assert (directory / "config.toml").read_text() == worker_config
+    assert len(submitted) == 1
+    assert submitted[0].source == f"agent:{sender.agent_id}"
+    assert assignment in submitted[0].msg
+    assert str(worker.cwd) in submitted[0].msg
+    assert sender.agent_id in submitted[0].msg
+    assert "execution and verification" in submitted[0].msg
+    assert "beeloop-state:save" not in submitted[0].msg
+
+    bind(worker)
+    server.message(sender.agent_id, "verified result")
+    assert submitted[-1].agent_id == sender.agent_id
+    other = orchestrator(backend="fake")
+    with pytest.raises(server.MessagingError, match="may not send"):
+        server.message(other.agent_id, "wrong callback")
+
+
+def test_delegation_reuses_own_worker_and_optionally_requests_state(beeloop_root, monkeypatch):
+    make_role(beeloop_root, "worker", 'backend = "fake"\n')
+    sender = orchestrator(backend="fake")
+    bind(sender)
+    submitted = []
+    monkeypatch.setattr(messaging, "_submit", submitted.append)
+    first = server.delegate_worker("project", "initial work")
+    rules(sender, ids=[first["receiver_agent_id"]])
+
+    reused = server.delegate_worker("project", "deeper follow-up", first["receiver_agent_id"], save_state=True)
+
+    assert reused["receiver_agent_id"] == first["receiver_agent_id"]
+    assert "beeloop-state:save" in submitted[-1].msg
+    assert "work_name and cwd" in submitted[-1].msg
+    assert len(list(records.runtime("agents").glob("*/record.json"))) == 2
+
+
+@pytest.mark.parametrize("role", ["router", "worker"])
+def test_delegation_requires_an_orchestrator(role):
+    sender = ag.create(role, cwd="workspace", backend="fake")
+    bind(sender)
+    with pytest.raises(server.MessagingError, match="bound orchestrator"):
+        server.delegate_worker("project", "work")
+
+
+def test_delegation_cannot_create_without_worker_permission(monkeypatch):
+    sender = orchestrator(backend="fake")
+    bind(sender)
+    rules(sender)
+    monkeypatch.setattr(messaging, "_submit", lambda *args: pytest.fail("dispatched"))
+    with pytest.raises(server.MessagingError, match="not allowed to create"):
+        server.delegate_worker("project", "work")
+    assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
+
+
+def test_delegation_reuse_cannot_take_over_other_workers(beeloop_root, monkeypatch):
+    make_role(beeloop_root, "worker", 'backend = "fake"\n')
+    sender = orchestrator(backend="fake")
+    bind(sender)
+    monkeypatch.setattr(messaging, "_submit", lambda *args: None)
+    own = server.delegate_worker("project", "work")["receiver_agent_id"]
+    other_sender = orchestrator(backend="fake")
+    foreign = ag.create("worker", cwd="project", backend="fake", delegator_agent_id=other_sender.agent_id)
+    legacy = ag.create("worker", cwd="project", backend="fake")
+    for receiver in (foreign, legacy, other_sender):
+        original = records.read(receiver.agent_id)
+        with pytest.raises(server.MessagingError, match="created by this orchestrator"):
+            server.delegate_worker("project", "take over", receiver.agent_id)
+        assert records.read(receiver.agent_id) == original
+    with pytest.raises(server.MessagingError, match="requested cwd"):
+        server.delegate_worker("different-project", "work", own)
+    rules(sender)
+    with pytest.raises(server.MessagingError, match="may not delegate"):
+        server.delegate_worker("project", "work", own)
+    rules(sender, ids=[own])
+    ag.restore(own).close()
+    with pytest.raises(server.MessagingError, match="closed worker"):
+        server.delegate_worker("project", "work", own)
+
+
+def test_live_delegation_dispatches_a_worker_with_source_and_callback(beeloop_root):
+    make_role(beeloop_root, "worker", 'backend = "fake"\n')
+    sender = orchestrator(backend="fake")
+
+    async def delegate():
+        async with live_session(sender) as session:
+            result = await session.call_tool("delegate_worker", {
+                "cwd": "project", "assignment": "Verify and deliver this result", "save_state": True,
+            })
+            assert not result.is_error
+            return result.structured_content["receiver_agent_id"]
+
+    worker_id = asyncio.run(delegate())
+    wait_for(lambda: bool(fake.turns(worker_id)))
+    source, payload = fake.turns(worker_id)[0][0]
+    assert source == f"agent:{sender.agent_id}"
+    assert "Verify and deliver this result" in payload
+    assert "beeloop-state:save" in payload
+    assert records.read(worker_id)["delegator_agent_id"] == sender.agent_id
 
 
 def test_the_plugin_definitions_bind_each_tools_stdio_environment():
@@ -297,31 +397,16 @@ def test_the_optional_binding_comes_from_the_environment_and_must_be_absolute(
     assert server.AGENT_DIRECTORY == directory
 
 
-def test_unbound_identity_is_none():
+def test_identity_without_binding_is_none():
     assert server.get_agent_id() is None
 
 
-def test_direct_cli_can_read_status_and_latest_response():
-    receiver = orchestrator(backend="fake")
-    assert server.read_agent(receiver.agent_id)["response"] is None
-    receiver.spin([InputItem("user:direct", "result for CLI")])
-
-    result = server.read_agent(receiver.agent_id)
-
-    assert result["status"] == "active"
-    assert result["response"]["turn"] == result["turns"]
-    assert "result for CLI" in result["response"]["text"]
-
-
-def test_agent_discovery_and_reads_respect_receiver_permissions():
+def test_agent_discovery_respects_receiver_permissions():
     sender, receiver = sender_and_receiver()
     rules(sender)
     assert server.list_agents() == []
-    with pytest.raises(server.MessagingError, match="may not read"):
-        server.read_agent(receiver.agent_id)
     rules(sender, ids=[receiver.agent_id])
     assert [item["agent_id"] for item in server.list_agents()] == [receiver.agent_id]
-    assert server.read_agent(receiver.agent_id)["agent_id"] == receiver.agent_id
 
 
 def test_identity_is_read_from_the_bound_record_on_every_call():
@@ -339,13 +424,17 @@ def test_identity_is_read_from_the_bound_record_on_every_call():
 @pytest.mark.parametrize(
     "call",
     [
-        lambda: server.route_source("user:direct", "agent"),
+        lambda: server.create_agent("worker", "project"),
+        lambda: server.message("agent", "work"),
+        server.list_agents,
+        lambda: server.delegate_worker("project", "work"),
+        lambda: server.route_source("slack:thread", "agent"),
         lambda: server.timer_create("check", after="1h"),
         server.timer_list,
         lambda: server.timer_cancel("timer"),
     ],
 )
-def test_bound_only_tools_explain_unbound_use(call):
+def test_agent_operations_require_binding(call):
     with pytest.raises(server.MessagingError, match="requires a bound BeeLoop agent"):
         call()
 
@@ -762,60 +851,6 @@ def test_named_message_routes_reuse_and_remain_distinct(beeloop_root, monkeypatc
     assert recipient_ids[0] == recipient_ids[2]
     assert recipient_ids[1] == recipient_ids[3]
     assert recipient_ids[0] != recipient_ids[1]
-
-
-def test_unbound_messages_support_exact_ids_and_routes(beeloop_root, monkeypatch):
-    make_role(
-        beeloop_root,
-        "target",
-        'backend = "fake"\ncwd = "workspaces/target"\n',
-    )
-    existing = ag.create("target")
-    submitted = []
-    monkeypatch.setattr(messaging, "_submit", submitted.append)
-
-    assert server.message(existing.agent_id, "exact") == accepted(existing)
-    fresh = server.message({"role": "target"}, "fresh")
-    assert fresh["receiver_agent_id"] == submitted[-1].agent_id
-    for instance in ("one", "two", "one"):
-        result = server.message(
-            {"role": "target", "instance": instance}, f"route {instance}"
-        )
-        assert result["receiver_agent_id"] == submitted[-1].agent_id
-    routed = [envelope.agent_id for envelope in submitted[2:]]
-
-    assert all(envelope.source == "user:direct" for envelope in submitted)
-    assert "instance" not in records.read(fresh["receiver_agent_id"])
-    assert routed[0] == routed[2]
-    assert routed[0] != routed[1]
-
-
-def test_bound_secondary_can_reassign_a_direct_user_route(
-    beeloop_root, monkeypatch
-):
-    make_role(
-        beeloop_root,
-        "target",
-        'backend = "fake"\ncwd = "workspaces/target"\n',
-    )
-    monkeypatch.setattr(messaging, "_submit", lambda envelope: None)
-    receiver = {"role": "target", "instance": "secondary"}
-    candidate_id = server.message(receiver, "request")["receiver_agent_id"]
-    candidate = ag.restore(candidate_id)
-    primary = ag.create("target", instance="primary")
-    bind(candidate)
-    rules(candidate, ids=[primary.agent_id])
-
-    server.route_source("user:direct", primary.agent_id)
-
-    route = Route(
-        "user:direct",
-        str(candidate.cwd),
-        "target",
-        "fake",
-        "secondary",
-    )
-    assert route.resolve() == primary.agent_id
 
 
 def test_message_route_uses_the_shared_authorized_creator(beeloop_root, monkeypatch):

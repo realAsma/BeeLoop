@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
 
+from beeloop import agents as ag
 from beeloop.agents.backends import BackendError, InputItem, Session, get
 from beeloop.agents.backends.codex import CodexBackend, _argv, _render, _result
 
@@ -75,6 +77,48 @@ def test_model_is_replayed_on_fresh_and_resumed_turns():
     for prepared in (True, False):
         argv = _argv(session(prepared=prepared, options={"model": "gpt-test"}), "hi")
         assert argv[argv.index("--model") + 1] == "gpt-test"
+
+
+@pytest.mark.parametrize("prepared", [True, False])
+def test_role_config_overrides_are_valid_toml_on_every_turn(prepared):
+    overrides = {
+        "plugins.beeloop-tools@beeloop-tools.mcp_servers.beeloop-tools.enabled_tools": ["message", "route_source"],
+        "policy": "approve",
+        "enabled": False,
+        "timeout": 30,
+        "unicode": "Instructions 🐝",
+    }
+    argv = _argv(session(prepared=prepared, permissions="read", options={"config": overrides}), "hi")
+    supplied = [argv[index + 1] for index, value in enumerate(argv) if value == "-c"]
+    for key, value in zip(overrides, supplied):
+        prefix, _, encoded = value.partition("=")
+        assert prefix == key
+        assert tomllib.loads(f"value = {encoded}")["value"] == overrides[key]
+    assert "--approve-for-me" not in argv
+    assert argv[argv.index("--sandbox") + 1] == "read-only"
+
+
+@pytest.mark.parametrize("value", [None, {}, float("nan")])
+def test_unsupported_config_values_are_rejected(value):
+    with pytest.raises(BackendError, match="config"):
+        _argv(session(options={"config": {"option": value}}), "hi")
+
+
+def test_router_uses_read_only_sandbox_with_only_routing_and_state_read_tools():
+    router = ag.create("router")
+    argv = _argv(router.session(), "route intake")
+    assert argv[argv.index("--sandbox") + 1] == "read-only"
+    assert "--approve-for-me" not in argv
+    config = router.role.options["config"]
+    tools = "plugins.beeloop-tools@beeloop-tools.mcp_servers.beeloop-tools"
+    state = "plugins.beeloop-state@beeloop-state.mcp_servers.state"
+    assert set(config[f"{tools}.enabled_tools"]) == {
+        "get_agent_id", "get_beeloop_root", "list_agents",
+        "create_agent", "message", "route_source",
+    }
+    assert config[f"{tools}.default_tools_approval_mode"] == "approve"
+    assert set(config[f"{state}.enabled_tools"]) == {"state_index_search", "state_get"}
+    assert config[f"{state}.default_tools_approval_mode"] == "approve"
 
 
 def test_deliver_binds_the_agent_and_adopts_codex_thread_id(monkeypatch):

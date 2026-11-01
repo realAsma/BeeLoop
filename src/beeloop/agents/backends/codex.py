@@ -104,10 +104,28 @@ def _argv(session: Session, prompt: str) -> list[str]:
     argv = [_binary(), "exec", "--json", "--skip-git-repo-check", *profile]
     if model := session.options.get("model"):
         argv += ["--model", str(model)]
+    overrides = session.options.get("config", {})
+    if not isinstance(overrides, dict):
+        raise BackendError("Codex config overrides must be a table")
+    for key, value in overrides.items():
+        if not isinstance(key, str) or not key:
+            raise BackendError("Codex config override keys must be non-empty strings")
+        argv += ["-c", f"{key}={_config_value(value)}"]
     if not session.prepared:
         argv += ["resume", session.session_id]
     argv.append(prompt)
     return argv
+
+
+def _config_value(value: Any) -> str:
+    if isinstance(value, list):
+        return "[" + ", ".join(_config_value(item) for item in value) + "]"
+    if isinstance(value, (str, bool, int, float)):
+        try:
+            return json.dumps(value, ensure_ascii=False, allow_nan=False)
+        except ValueError as exc:
+            raise BackendError(f"invalid Codex config value: {exc}") from exc
+    raise BackendError("Codex config override values must be TOML scalars or lists")
 
 
 def _binary() -> str:
