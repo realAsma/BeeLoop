@@ -20,6 +20,7 @@ import beeloop.dispatch.dispatch as dsp
 from beeloop import agents as ag
 from beeloop.agents import records
 from beeloop.agents.backends import fake
+from beeloop.agents.backends.base import InputItem
 from beeloop.dispatch import messaging
 from beeloop.dispatch.envelope import Envelope
 from beeloop.dispatch.routes import Route
@@ -135,6 +136,8 @@ def test_the_live_server_exposes_tools_bound_and_unbound(bound, beeloop_root):
         "create_agent",
         "message",
         "route_source",
+        "list_agents",
+        "read_agent",
         "timer_create",
         "timer_list",
         "timer_cancel",
@@ -296,6 +299,29 @@ def test_the_optional_binding_comes_from_the_environment_and_must_be_absolute(
 
 def test_unbound_identity_is_none():
     assert server.get_agent_id() is None
+
+
+def test_direct_cli_can_read_status_and_latest_response():
+    receiver = orchestrator(backend="fake")
+    assert server.read_agent(receiver.agent_id)["response"] is None
+    receiver.spin([InputItem("user:direct", "result for CLI")])
+
+    result = server.read_agent(receiver.agent_id)
+
+    assert result["status"] == "active"
+    assert result["response"]["turn"] == result["turns"]
+    assert "result for CLI" in result["response"]["text"]
+
+
+def test_agent_discovery_and_reads_respect_receiver_permissions():
+    sender, receiver = sender_and_receiver()
+    rules(sender)
+    assert server.list_agents() == []
+    with pytest.raises(server.MessagingError, match="may not read"):
+        server.read_agent(receiver.agent_id)
+    rules(sender, ids=[receiver.agent_id])
+    assert [item["agent_id"] for item in server.list_agents()] == [receiver.agent_id]
+    assert server.read_agent(receiver.agent_id)["agent_id"] == receiver.agent_id
 
 
 def test_identity_is_read_from_the_bound_record_on_every_call():
@@ -523,36 +549,39 @@ def test_route_source_rejects_ephemeral_unknown_and_other_owned_sources():
     receiver = orchestrator(instance="primary")
     bind(ephemeral)
     rules(ephemeral, ids=[receiver.agent_id])
-    with pytest.raises(server.MessagingError, match="persistent instance"):
+    with pytest.raises(server.MessagingError, match="no route owned"):
         server.route_source("slack:ephemeral", receiver.agent_id)
 
     sender, receiver, route = routed_pair("slack:unknown")
     rules(sender, ids=[receiver.agent_id])
     route.remove()
-    with pytest.raises(server.MessagingError, match="has no route"):
+    with pytest.raises(server.MessagingError, match="no route owned"):
         server.route_source(route.source, receiver.agent_id)
 
     other = orchestrator(instance="other")
     route.new(other.agent_id)
-    with pytest.raises(server.MessagingError, match="another agent"):
+    with pytest.raises(server.MessagingError, match="no route owned"):
         server.route_source(route.source, receiver.agent_id)
 
 
-def test_route_source_requires_an_allowed_compatible_existing_receiver():
+def test_route_source_requires_an_allowed_existing_receiver():
     sender, receiver, route = routed_pair()
     rules(sender)
     with pytest.raises(server.MessagingError, match="may not route"):
         server.route_source(route.source, receiver.agent_id)
 
     rules(sender, ids=["*"])
-    incompatible = [
+    receivers = [
         orchestrator(cwd="workspaces/elsewhere", instance="primary"),
         ag.create("worker", cwd=sender.record["cwd"], instance="primary"),
         orchestrator(instance="backend", backend="codex"),
     ]
-    for receiver in incompatible:
-        with pytest.raises(server.MessagingError, match="role, cwd, and backend"):
-            server.route_source(route.source, receiver.agent_id)
+    for receiver in receivers:
+        route.new(sender.agent_id)
+        server.route_source(route.source, receiver.agent_id)
+        assert route.resolve() == receiver.agent_id
+
+    route.new(sender.agent_id)
 
     with pytest.raises(ag.UnknownAgent):
         server.route_source(
@@ -582,7 +611,7 @@ def test_concurrent_route_transfers_have_one_winner():
         thread.join(10)
 
     assert results.count("routed") == 1
-    assert results.count(f"source {route.source!r} is routed to another agent") == 7
+    assert sum("no route owned" in result or "routed to another agent" in result for result in results) == 7
     assert len(records.runtime().joinpath("routes.jsonl").read_text().splitlines()) == 2
 
 

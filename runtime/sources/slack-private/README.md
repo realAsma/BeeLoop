@@ -1,9 +1,10 @@
 # Private Slack input
 
 This source connects BeeLoop to one configured Slack user through Socket Mode.
-It accepts only private `message.im` events from that user and creates one
-persistent orchestrator per Slack thread. Message bodies and file bytes are
-fetched only after intake authentication.
+It accepts only private `message.im` events from that user. New Slack threads
+reach the router, which connects them to an existing or new orchestrator.
+Connected threads go directly to their orchestrator. Message bodies and file
+bytes are fetched only after intake authentication.
 
 `reply` and `upload` answer inside a thread this input authenticated. The
 `dm-thread` helper is the one outbound path with no inbound event behind it: it

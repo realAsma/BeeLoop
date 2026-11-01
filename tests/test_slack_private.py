@@ -113,7 +113,7 @@ def test_envelope_uses_source_route_without_raw_message():
     }
     parsed = parse_envelope(format_envelope(record))
 
-    assert parsed.role == "orchestrator"
+    assert parsed.role == "router"
     assert parsed.instance == "default"
     assert parsed.source == record["source"]
     assert "run this" not in parsed.msg

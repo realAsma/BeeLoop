@@ -22,13 +22,12 @@ Call `get_agent_id()`:
    - As a BeeLoop agent, if you need a reply, include: "After completion,
      reply to the agent ID in this message's source using the `message` MCP
      tool."
-   - As an unbound agent, if you need a reply, include: `I am
-     <short-sender-descriptor>. After completion, write your reply to
-     agent_art/messages/<short-sender-descriptor> in your current working
-     directory.`
+   - As an unbound agent, ask for progress and results in the receiver's turn
+     responses. Retrieve them with `read_agent(receiver_agent_id=...)`.
 3. Send the payload with the `message` MCP tool.
 4. Record `receiver_agent_id`, `receiver_role`, and `receiver_cwd` from the
-   result for follow-ups.
+   result for follow-ups. Direct CLI assignments use `assign-beebot`; follow-ups
+   target the retained agent ID rather than a shared named route.
 
 ## Handle a received message
 

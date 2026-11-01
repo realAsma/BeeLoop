@@ -5,9 +5,7 @@ BeeLoop polls executable files in `inputs.d/`; each emits an envelope.
 Example envelope:
 
 ```text
-role=orchestrator
-backend=codex
-cwd=workspaces/example-project
+role=router
 instance=default
 source=review:example/project:123
 msg=Pull request 123 got a new review comment.
@@ -18,12 +16,13 @@ BeeLoop parses each envelope and dispatches to an agent.
 
 ## Fields
 
-- `role`: Dispatch/creation role; defaults to `orchestrator`.
+- `role`: Dispatch/creation role; defaults to `router` for cold intake.
 - `backend`: Optional creation backend; defaults to the role's backend.
 - `agent_id`: ID of an existing restorable agent; bypasses route lookup.
 - `cwd`: Working directory; relative paths resolve under the configured BeeLoop root. Uses the role default or is required.
 - `instance`: Persistence name; missing, empty, or `fresh` always creates; named
-  instances reuse the latest restorable agent or create one.
+  instances reuse the latest restorable agent or create one. Router intake
+  defaults to `default`, sharing one router until each source is connected.
 - `source`: Required external session and optional reply handle.
 - `msg`: Non-empty event description and location.
 
@@ -45,8 +44,7 @@ BeeLoop parses each envelope and dispatches to an agent.
   `instance`, or `backend`. Otherwise BeeLoop routes by
   `(source, cwd, role, backend, instance)`.
 - Format `source` as `<source-name>:<session-key>` with a lowercase, hyphenated
-  name and a stable identifier for the smallest external conversation that
-  shares a reply destination.
+  name and a stable identifier for the external conversation and reply destination.
 - Each poll, inputs validate dependencies, re-emit pending events, and own
   supported external replies; BeeLoop has no queue or automatic replies.
 - Store source credentials as `KEY=value` in

@@ -6,6 +6,7 @@ from .agent import (
     REGISTRY,
     Agent,
     NotResumable,
+    PersistentAgent,
     agent_class,
     create,
     register,
@@ -55,6 +56,6 @@ __all__ = [
     "Turn", "claim", "drain_or_release", "new_agent_id", "now", "read",
     "files_lock", "update", "validate", "write",
     "Role", "load_role", "workspace",
-    "REGISTRY", "Agent", "agent_class", "create", "register", "restore",
+    "REGISTRY", "Agent", "PersistentAgent", "agent_class", "create", "register", "restore",
     "Delivery", "InputItem", "Session",
 ]

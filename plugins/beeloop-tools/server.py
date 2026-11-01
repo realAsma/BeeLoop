@@ -84,6 +84,18 @@ def route_source(source: str, receiver_agent_id: str) -> dict[str, str]:
 
 
 @_tool
+def list_agents() -> list[dict[str, Any]]:
+    """List permitted BeeLoop agents for routing and conversation discovery."""
+    return messaging.list_agents(AGENT_DIRECTORY)
+
+
+@_tool
+def read_agent(receiver_agent_id: str) -> dict[str, Any]:
+    """Read a permitted agent's status and latest response without waiting."""
+    return messaging.read_agent(AGENT_DIRECTORY, receiver_agent_id)
+
+
+@_tool
 def timer_create(
     message: str,
     after: str | None = None,

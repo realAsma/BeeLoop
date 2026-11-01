@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, ClassVar, Mapping, Sequence
 
@@ -195,14 +196,16 @@ class Agent:
             return batch
         return [session_ttl.init_input(prompt), *batch]
 
-    def _turn(self, batch: Sequence[InputItem]) -> Delivery:
+    def _turn(self, batch: Sequence[InputItem], *, recover: bool = True) -> Delivery:
         try:
             delivery = self.backend.deliver(self.session(), batch)
         except BackendError as exc:
             if self.backend.classify(str(exc)) != "terminal":
                 raise
             self.on_terminal(exc)
-            return self._turn(batch)
+            if not recover:
+                raise
+            return self._wake_session(batch, recover=False)
         self._record_delivery(delivery, move_ttl=True)
         return delivery
 
@@ -219,6 +222,10 @@ class Agent:
                 session_ttl.move(record, self.ttl_policy)
 
         self.record = records.modify(self.agent_id, self.SCHEMA, change)
+        write_file(
+            agent_path(self.agent_id) / "response.json",
+            json.dumps({"turn": self.record["turns"], "text": delivery.text}),
+        )
 
     def _expire_session(self, item: InputItem) -> Delivery:
         old_session = self.session()
@@ -240,22 +247,13 @@ class Agent:
             try:
                 self.backend.close(old_session)
             finally:
-                def sleep(record: dict[str, Any]) -> None:
-                    record.update(
-                        {
-                            "status": DORMANT,
-                            "session_id": None,
-                            "session_since": None,
-                            "session_last_turn": None,
-                        }
-                    )
-                    session_ttl.remove(record)
-
-                self.record = records.modify(self.agent_id, self.SCHEMA, sleep)
+                self._detach_session()
         outcome = "saved" if saved else "failed"
         return Delivery(text=f"session TTL expired; handoff {outcome}")
 
-    def _wake_session(self, inputs: Sequence[InputItem]) -> Delivery:
+    def _wake_session(
+        self, inputs: Sequence[InputItem], *, recover: bool = True
+    ) -> Delivery:
         stamp = now()
         session_id = self.backend.open()
         expiry_prompt = self.role.prompt(
@@ -292,10 +290,26 @@ class Agent:
             if handoff
             else list(inputs)
         )
-        delivery = self._turn(batch)
+        try:
+            delivery = self._turn(batch, recover=recover)
+        except BackendError:
+            self._detach_session()
+            raise
         if handoff:
             session_ttl.clear_handoff(self.agent_id)
         return delivery
+
+    def _detach_session(self) -> None:
+        def detach(record: dict[str, Any]) -> None:
+            record.update({
+                "status": DORMANT,
+                "session_id": None,
+                "session_since": None,
+                "session_last_turn": None,
+            })
+            session_ttl.remove(record)
+
+        self.record = records.modify(self.agent_id, self.SCHEMA, detach)
 
     def on_terminal(self, exc: BackendError) -> None:
         """Close an agent whose backend session cannot be resumed."""
@@ -324,7 +338,28 @@ class Agent:
         self.record = self._update({"status": CLOSED})
 
 
-REGISTRY: dict[str, type[Agent]] = {Agent.__name__: Agent}
+class PersistentAgent(Agent):
+    """Keep a logical agent alive when its backend session is lost."""
+
+    def on_terminal(self, exc: BackendError) -> None:
+        handoff = session_ttl.read_handoff(self.agent_id)
+        recovery = self.role.prompt(
+            "session_recover", "Recover this agent's saved state before continuing."
+        )
+        if not handoff:
+            session_ttl.write_handoff(
+                self.agent_id,
+                f"The previous backend session was lost. Agent ID: {self.agent_id}. "
+                f"Workspace: {self.cwd}.\n{recovery or ''}",
+            )
+
+        self._detach_session()
+
+
+REGISTRY: dict[str, type[Agent]] = {
+    Agent.__name__: Agent,
+    PersistentAgent.__name__: PersistentAgent,
+}
 
 
 def register(cls: type[Agent]) -> None:

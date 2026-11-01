@@ -12,10 +12,17 @@ from pathlib import Path
 from typing import Any
 
 from beeloop import agents as ag
-from beeloop.agents.records import root
+from beeloop.agents.records import agent_path, root
 from beeloop.agents.roles import load_role, workspace
 from beeloop.dispatch.envelope import Envelope, serialize
-from beeloop.dispatch.routes import Route, RouteError, agent_for, reassign
+from beeloop.dispatch.routes import (
+    Route,
+    RouteError,
+    agent_for,
+    connected_sources,
+    owned_route,
+    reassign,
+)
 
 
 class MessagingError(RuntimeError):
@@ -111,10 +118,6 @@ def route_source(
         raise MessagingError("receiver_agent_id must be a non-empty string")
 
     sender = _identity(sender_directory)
-    instance = sender.get("instance")
-    if not isinstance(instance, str) or not instance or instance == "fresh":
-        raise MessagingError("the calling agent does not have a persistent instance")
-
     receiver = ag.restore(receiver_agent_id)
     allowed = _allowed_receivers(sender_directory / "config.toml")
     if not allowed.allows(receiver.record["role"], receiver.agent_id):
@@ -122,18 +125,10 @@ def route_source(
             f"agent {sender['agent_id']!r} may not route to role "
             f"{receiver.record['role']!r} or agent {receiver.agent_id!r}"
         )
-    if (
-        receiver.record["role"] != sender["role"]
-        or str(receiver.cwd) != sender["cwd"]
-        or receiver.record["backend"] != sender["backend"]
-    ):
-        raise MessagingError(
-            "a routed source receiver must have the calling agent's role, cwd, "
-            "and backend"
-        )
-
-    route = Route(source, sender["cwd"], sender["role"], sender["backend"], instance)
+    if receiver.status == "closed":
+        raise MessagingError("cannot route a source to a closed agent")
     try:
+        route = owned_route(source, sender["agent_id"])
         reassign(route, sender["agent_id"], receiver.agent_id)
     except RouteError as exc:
         raise MessagingError(str(exc)) from exc
@@ -142,6 +137,40 @@ def route_source(
         "receiver_agent_id": receiver.agent_id,
         "receiver_role": receiver.record["role"],
     }
+
+
+def read_agent(sender_directory: Path | None, receiver_agent_id: str) -> dict[str, Any]:
+    """Read a permitted agent's status and latest turn response."""
+    receiver = ag.restore(receiver_agent_id)
+    allowed = _receiver_policy(sender_directory)
+    if not allowed.allows(receiver.record["role"], receiver.agent_id):
+        raise MessagingError(f"may not read agent {receiver_agent_id!r}")
+    response_path = agent_path(receiver.agent_id) / "response.json"
+    response = json.loads(response_path.read_text("utf-8")) if response_path.exists() else None
+    return {
+        "agent_id": receiver.agent_id,
+        "role": receiver.record["role"],
+        "cwd": str(receiver.cwd),
+        "status": receiver.status,
+        "turns": receiver.record["turns"],
+        "response": response,
+    }
+
+
+def list_agents(sender_directory: Path | None) -> list[dict[str, Any]]:
+    """List permitted agents for routing and conversation discovery."""
+    allowed = _receiver_policy(sender_directory)
+    agents = []
+    sources = connected_sources()
+    for path in sorted((root() / "runtime" / "agents").glob("*/record.json")):
+        record = json.loads(path.read_text("utf-8"))
+        if allowed.allows(record["role"], record["agent_id"]):
+            item = {key: record[key] for key in (
+                "agent_id", "role", "cwd", "status", "last_turn",
+            )}
+            item["sources"] = sources.get(record["agent_id"], [])
+            agents.append(item)
+    return agents
 
 
 def _identity(directory: Path) -> dict[str, str]:

@@ -43,7 +43,7 @@ def main() -> int:
 def format_envelope(record: dict[str, object]) -> str:
     return "\n".join(
         [
-            "role=orchestrator",
+            "role=router",
             "instance=default",
             f"source={record['source']}",
             "msg=Authenticated private Slack DM from the configured owner.",

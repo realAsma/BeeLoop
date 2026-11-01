@@ -30,8 +30,9 @@ claude plugin install beeloop-tools@beeloop-tools
 <summary>Root for BeeLoop and Memory Files (Optional)</summary>
 
 By default, this checkout is the BeeLoop root and includes the orchestrator
-workspace. To use a different prepared BeeLoop root containing `configs/` and
-`orchestrator/`, create `~/.config/beeloop/loop.toml` before starting BeeLoop:
+workspace. To use a different prepared BeeLoop root containing `configs/`,
+`router/`, and `orchestrator/`, create `~/.config/beeloop/loop.toml` before
+starting BeeLoop:
 
 ```bash
 mkdir -p "$HOME/.config/beeloop"
@@ -55,24 +56,42 @@ tmux new-session -d -s beeloop beeloop
 ```
 
 This runs the gateway in the background, where it waits for inputs.
+Start it with the Python environment where BeeLoop and its source dependencies
+are installed. Input adapters inherit that environment's executables.
+
+## Routing
+
+New external conversations enter one persistent router in `router/`. It connects
+related intake to an existing orchestrator or creates one. Once connected,
+later events go directly to that orchestrator. Configure the router's model in
+`configs/roles/router/role.toml`.
 
 ## Orchestrator
 
 The orchestrator lives in the `orchestrator/` workspace. It is a special,
-stateful, event-driven agent designed to be your chief of staff. It delegates
-work, shares progress, and asks when it needs input.
+stateful, event-driven agent designed to be your chief of staff. Each
+orchestrator coordinates related intakes as its scope evolves, delegates work,
+shares progress, and maintains one overall BeeLoop State record.
 
 For design details, see the [orchestrator instructions](orchestrator/AGENTS.md)
 and [skills](orchestrator/.agents/skills/).
 
 Grow the orchestrator by talking to it and adding skills for workflows you
-repeat. To talk to it from the Codex or Claude Code CLI:
+repeat. From a Codex or Claude Code CLI with BeeLoop Tools installed, invoke
+the `assign-beebot` skill to assign work explicitly. The skill creates an
+orchestrator and retains its agent ID for direct follow-ups. `read_agent`
+retrieves its latest response; assignment is asynchronous.
 
-```sh
-cd orchestrator && codex
-# or
-cd orchestrator && claude
-```
+After updating BeeLoop Tools, refresh the installed plugin so its copied server
+and skills match this checkout (`codex plugin add beeloop-tools@beeloop-tools`
+or `claude plugin update beeloop-tools@beeloop-tools`).
+
+When upgrading an existing deployment, retain its source ownership by copying
+effective `orchestrator` intake mappings to the router intake key (router role,
+workspace, backend, and `default` instance), keeping the existing recipient ID.
+Set retained router and orchestrator records to type `PersistentAgent` so lost
+backend sessions recover under the same ID. Leave the old route entries intact
+for rollback. New deployments need no migration.
 
 To customize its personality:
 

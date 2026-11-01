@@ -1,0 +1,14 @@
+backend = "codex"
+type = "PersistentAgent"
+permissions = "approve_for_me"
+cwd = "router"
+
+[backend_options.codex]
+model = "gpt-6.1-terra"
+
+[allowed_receivers]
+roles = ["orchestrator"]
+
+[prompts]
+session_init = "Read AGENTS.md and connect the incoming sources to an orchestrator."
+session_recover = "Read AGENTS.md and discover current orchestrators and source mappings with list_agents before routing the pending intake."

@@ -10,7 +10,8 @@ import pytest
 
 from beeloop import agents as ag
 from beeloop.agents import records
-from beeloop.agents.backends import BackendError
+from beeloop.agents.backends import BackendError, fake
+from beeloop.dispatch import messaging
 import beeloop.dispatch.dispatch as dsp
 import beeloop.dispatch.envelope as env
 import beeloop.dispatch.routes as rt
@@ -472,3 +473,26 @@ def test_an_envelope_naming_an_unknown_agent_fails_loudly(routes):
     with pytest.raises(ag.UnknownAgent):
         dsp.dispatch(env.parse("agent_id=01a04db8-0000-7000-8000-000000000000\n"
                                "source=timer:t\nmsg=hello"))
+
+
+def test_cold_sources_share_router_and_connected_source_bypasses_it(routes):
+    first = rt.Route.of(env.Envelope("router", None, "slack:first", "first", backend="fake"))
+    second = rt.Route.of(env.Envelope("router", None, "slack:second", "second", backend="fake"))
+    router = rt.agent_for(first)
+    assert rt.agent_for(second).agent_id == router.agent_id
+    owner = ag.create("orchestrator", cwd="workspaces/evolving", backend="fake")
+
+    messaging.route_source(records.agent_path(router.agent_id), first.source, owner.agent_id)
+    dsp.dispatch(env.Envelope("router", None, first.source, "follow-up", backend="fake"))
+
+    assert fake.turns(owner.agent_id)[-1][-1] == [first.source, "follow-up"]
+    assert fake.turns(router.agent_id) == []
+    assert rt.agent_for(second).agent_id == router.agent_id
+
+
+def test_closed_router_is_replaced_for_cold_intake(routes):
+    route = rt.Route.of(env.Envelope("router", None, "slack:first", "first", backend="fake"))
+    router = rt.agent_for(route)
+    router.close()
+    replacement = rt.agent_for(route)
+    assert replacement.agent_id != router.agent_id
