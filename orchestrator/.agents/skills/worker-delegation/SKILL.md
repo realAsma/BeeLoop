@@ -7,24 +7,22 @@ description: Choose and dispatch BeeLoop workers with runtime-supplied assignmen
 
 ## Choosing workers
 
-Give workers coherent scopes and the relevant project workspace. Reuse one when
-its context helps; start fresh for independent work. Workers can organize their
-own execution and use native subagents or parallel work as needed.
+Give workers coherent scopes in the relevant project workspace. Reuse a worker
+when its context helps; start fresh for independent work. Workers can organize
+execution and use native subagents or parallel work as needed.
 
 ## Dispatch and results
 
-Call `delegate_worker(cwd=..., assignment=...)` with the specific scope, context,
-deliverables, and checks. The runtime creates the worker, authorizes your exact
-callback, and supplies standard execution, verification, and reporting
-instructions from its assignment template. You do not need to rewrite that
-boilerplate or edit worker permissions.
+Call `delegate_worker(cwd=..., assignment=...)` with scope, context, deliverables,
+and checks. The runtime creates the worker with your exact callback permission
+and template instructions for execution, verification, and reporting; no
+boilerplate rewrite or worker-permission edits are needed.
 
-To reuse a worker previously created for you by this tool, pass its `worker_id`
-and the same workspace.
+To reuse your worker from this tool, pass its `worker_id` and the same workspace.
 
-Retain `receiver_agent_id` and end your turn; acceptance confirms dispatch, not
-completion. Stay available for intake. Workers send delivery-ready results or
-blockers back to you; communicate them through relevant sources.
+Retain `receiver_agent_id` and end your turn to stay available for intake;
+acceptance confirms dispatch, not completion. Workers return delivery-ready
+results or blockers; communicate them through relevant sources.
 
 ## Worker state
 

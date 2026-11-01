@@ -9,11 +9,8 @@ The BeeLoop `message` MCP lets you message agents in the BeeLoop harness.
 
 ## Identity
 
-Call `get_agent_id()`:
-
-- If the ID is not `None`, you are a BeeLoop agent.
-- If the ID is `None`, agent operations are unavailable: they require a
-  harness-bound caller.
+Call `get_agent_id()`; `None` means agent operations are unavailable because
+they require a harness-bound caller.
 
 ## Send a message
 

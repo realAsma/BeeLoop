@@ -121,14 +121,7 @@ def agent_for(key: Route, creator: AgentCreator = ag.create) -> ag.Agent:
             if (agent_id := key.resolve()) and (found := _restored(agent_id)):
                 return found
             if key.role == "router":
-                router = Route("beeloop:router", key.cwd, key.role, key.backend, "default")
-                agent_id = router.resolve()
-                found = _restored(agent_id) if agent_id else None
-                if found is None:
-                    found = creator("router", cwd=key.cwd, backend=key.backend, instance="default")
-                    router.new(found.agent_id)
-                key.new(found.agent_id)
-                return found
+                return _router_for(key, creator)
             extra = {"instance": key.instance} if key.instance else {}
             new_agent = creator(
                 key.role, cwd=key.cwd, backend=key.backend, **extra
@@ -137,6 +130,18 @@ def agent_for(key: Route, creator: AgentCreator = ag.create) -> ag.Agent:
             return new_agent
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def _router_for(key: Route, creator: AgentCreator) -> ag.Agent:
+    """Resolve the shared router and map this source while holding the route lock."""
+    router = Route("beeloop:router", key.cwd, key.role, key.backend, "default")
+    agent_id = router.resolve()
+    found = _restored(agent_id) if agent_id else None
+    if found is None:
+        found = creator("router", cwd=key.cwd, backend=key.backend, instance="default")
+        router.new(found.agent_id)
+    key.new(found.agent_id)
+    return found
 
 
 def owned_route(source: str, agent_id: str) -> Route:

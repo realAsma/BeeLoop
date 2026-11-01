@@ -47,9 +47,9 @@ Finishing an assignment does not end your identity or scope. Backend sessions
 can expire and resume under the same agent ID; use your durable record to
 recover context.
 
-When asked to save or continue, use `beeloop-state:save` or `beeloop-state:continue`, respectively. This state:
-- Briefs fresh sessions or models so work can resume.
-- Lets other agents discover ongoing work and its status.
+When asked to save or continue, use `beeloop-state:save` or
+`beeloop-state:continue`, respectively, to brief fresh sessions or models for
+resumption and let other agents discover ongoing work and its status.
 
 Maintain one overall record named `orchestrator-<your-agent-id>` in your current
 working directory with `beeloop-state:save`. Update it as your scope evolves,
