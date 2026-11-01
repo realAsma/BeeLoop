@@ -1,11 +1,6 @@
-"""A backend that talks to nothing.
+"""Provider-free backend for lock, drain, and hydration tests without model cost.
 
-Not scaffolding. With one implementation, "the contract is expressible without
-naming a provider" is a claim nobody has tested, and every lock, drain and
-hydration test would otherwise have to spend tokens to run.
-
-It records what it was asked, in a file rather than in memory, because the tests
-that matter most run it from more than one process.
+Batches are logged to disk because tests cross process boundaries.
 """
 
 from __future__ import annotations
@@ -29,8 +24,6 @@ class FakeBackend(Backend):
     def deliver(self, session: Session, inputs: Sequence[InputItem]) -> Delivery:
         if not inputs:
             raise BackendError("nothing to deliver; an empty batch is a caller bug")
-        # A session told to fail keeps failing until it is replaced, which is
-        # what a lost session actually looks like.
         if fail := _failure(session.session_id):
             raise BackendError(fail)
         _log(session, [(item.source, item.content) for item in inputs])
@@ -52,12 +45,7 @@ class FakeBackend(Backend):
 
 
 def log_path(agent_id: str) -> Path:
-    """Where this backend writes what it was handed.
-
-    Through `root()` rather than reading configuration here, even though that
-    costs this package its leaf status: one resolver keeps the fake from
-    logging into a different deployment than every other component.
-    """
+    """Use the shared root resolver so logs target the same deployment."""
     return root() / "runtime" / "fake" / f"{agent_id}.jsonl"
 
 
@@ -70,8 +58,7 @@ def turns(agent_id: str) -> list[list[list[str]]]:
 
 
 def fail_session(session_id: str, message: str) -> None:
-    """Make one session fail. Keyed on the session rather than the agent, so a
-    refresh that mints a new id escapes it -- exactly like a real dead one."""
+    """Fail a session until replaced; a fresh session ID escapes the failure."""
     path = log_path(f"fail-{session_id}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(message, encoding="utf-8")

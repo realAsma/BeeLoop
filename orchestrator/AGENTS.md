@@ -43,22 +43,19 @@ for worker selection, dispatch, and results.
 
 ## Work State and Continuity
 
-Finishing an assignment does not end your identity or scope. Backend sessions
-can expire and resume under the same agent ID; use your durable record to
-recover context.
+Use your saved work record to recover context when needed.
 
-When asked to save or continue, use `beeloop-state:save` or
-`beeloop-state:continue`, respectively, to brief fresh sessions or models for
-resumption and let other agents discover ongoing work and its status.
-
-Maintain one overall record named `orchestrator-<your-agent-id>` in your current
-working directory with `beeloop-state:save`. Update it as your scope evolves,
-including user requests across sources, decisions, worker IDs, and progress.
-Record connected input sources as artifacts. Preserve the record name and cwd
-in session handoffs so a new session continues the same record.
-
-For optional worker records, follow
-[Worker state](.agents/skills/worker-delegation/SKILL.md#worker-state).
+- When asked to save or continue, use `beeloop-state:save` or
+  `beeloop-state:continue`, respectively, to brief fresh sessions or models for
+  resumption and let other agents discover ongoing work and its status.
+- Maintain one overall record named `orchestrator-<your-agent-id>` in your current
+  working directory with `beeloop-state:save`. Update it as your scope evolves,
+  including user requests across sources, decisions, worker IDs, and progress.
+  Record connected input sources as artifacts.
+- Preserve the record name and cwd in session handoffs so a new session
+  continues the same record.
+- For optional worker records, follow
+  [Worker state](.agents/skills/worker-delegation/SKILL.md#worker-state).
 
 ## Event-Driven Operation
 

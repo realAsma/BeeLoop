@@ -9,9 +9,16 @@ import shutil
 import subprocess
 import uuid
 from typing import Any, Sequence
-from xml.sax.saxutils import quoteattr
 
-from .base import Backend, BackendError, Delivery, Fault, InputItem, Session
+from .base import (
+    Backend,
+    BackendError,
+    Delivery,
+    Fault,
+    InputItem,
+    Session,
+    render_inputs as _render,
+)
 
 _TERMINAL_SESSION_MARKERS = (
     "session not found:",
@@ -162,19 +169,3 @@ def _result(output: str) -> tuple[str, str]:
     if not thread_id:
         raise BackendError("codex output did not include a thread.started event")
     return thread_id, text
-
-
-def _render(inputs: Sequence[InputItem]) -> str:
-    if not inputs:
-        raise BackendError("nothing to deliver; an empty batch is a caller bug")
-
-    framed = "\n".join(
-        f"<input source={quoteattr(item.source)}>\n{item.content}\n</input>"
-        for item in inputs
-    )
-    if len(inputs) == 1:
-        return framed
-    return (
-        f"{len(inputs)} inputs arrived, in the order they were received.\n\n"
-        f"{framed}"
-    )
