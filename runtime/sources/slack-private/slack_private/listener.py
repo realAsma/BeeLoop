@@ -89,6 +89,7 @@ def run_listener(root: Path) -> int:
 
     try:
         from slack_sdk import WebClient
+        from slack_sdk.errors import SlackApiError, SlackClientError
         from slack_sdk.socket_mode import SocketModeClient
         from slack_sdk.socket_mode.response import SocketModeResponse
     except ImportError:
@@ -110,6 +111,7 @@ def run_listener(root: Path) -> int:
         _log("auth.test did not return team_id and user_id")
         return 0
 
+    receipt_client = WebClient(token=config.bot_token, timeout=2, retry_handlers=[])
     socket_client = SocketModeClient(app_token=config.app_token, web_client=web_client)
 
     def handle_request(client: Any, request: Any) -> None:
@@ -134,6 +136,16 @@ def run_listener(root: Path) -> int:
         record["permalink"] = permalink
         if enqueue_authenticated_record(root, record):
             _log(f"queued authenticated Slack DM event {record['event_id']}")
+            try:
+                receipt_client.reactions_add(
+                    channel=record["channel"], timestamp=record["ts"], name="blob-bee",
+                )
+            except SlackApiError as exc:
+                error = exc.response.get("error", "unknown_error")
+                if error != "already_reacted":
+                    _log(f"reactions.add failed for event {record['event_id']}: {error}")
+            except (SlackClientError, OSError) as exc:
+                _log(f"reactions.add failed for event {record['event_id']}: {type(exc).__name__}")
 
     socket_client.socket_mode_request_listeners.append(handle_request)
     try:
