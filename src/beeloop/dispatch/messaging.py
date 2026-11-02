@@ -60,9 +60,9 @@ def create_agent(
     cwd: str | None = None,
 ) -> dict[str, str]:
     """Authorize and create an agent without dispatching a turn."""
-    sender = _identity(sender_directory)
-    allowed = _receiver_policy(sender_directory)
-    created = _create(allowed, role, cwd=cwd, sender=sender)
+    _identity(sender_directory)
+    allowed = _allowed_receivers(sender_directory / "config.toml")
+    created = _create(allowed, role, cwd=cwd)
     return {
         "agent_id": created.agent_id,
         "role": created.record["role"],
@@ -79,10 +79,10 @@ def send(
     if not msg.strip():
         raise MessagingError("msg must not be empty")
 
-    sender = _identity(sender_directory)
-    source = f"agent:{sender['agent_id']}"
+    sender_id = _identity(sender_directory)["agent_id"]
+    source = f"agent:{sender_id}"
     recipient = _resolve(
-        receiver, sender, source, _receiver_policy(sender_directory)
+        receiver, sender_id, source, _allowed_receivers(sender_directory / "config.toml")
     )
 
     _submit(
@@ -136,7 +136,8 @@ def route_source(
 
 def list_agents(sender_directory: Path) -> list[dict[str, Any]]:
     """List permitted agents for routing and conversation discovery."""
-    allowed = _receiver_policy(sender_directory)
+    _identity(sender_directory)
+    allowed = _allowed_receivers(sender_directory / "config.toml")
     agents = []
     sources = connected_sources()
     for path in sorted((root() / "runtime" / "agents").glob("*/record.json")):
@@ -182,13 +183,6 @@ def _allowed_receivers(path: Path) -> AllowedReceivers:
     return AllowedReceivers(frozenset(roles), frozenset(ids))
 
 
-def _receiver_policy(sender_directory: Path) -> AllowedReceivers:
-    allowed = _allowed_receivers(sender_directory / "config.toml")
-    record = json.loads((sender_directory / "record.json").read_text("utf-8"))
-    callback = record.get("delegator_agent_id") if record["role"] == "worker" else None
-    return AllowedReceivers(allowed.roles, allowed.ids | {callback}) if callback else allowed
-
-
 def _string_list(value: Any, path: Path, field: str) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise MessagingError(
@@ -199,7 +193,7 @@ def _string_list(value: Any, path: Path, field: str) -> list[str]:
 
 def _resolve(
     receiver: str | dict[str, Any],
-    sender: dict[str, str],
+    sender_id: str,
     source: str,
     allowed: AllowedReceivers,
 ) -> ag.Agent:
@@ -214,13 +208,13 @@ def _resolve(
                 raise MessagingError(
                     f"role {route.role!r} is not allowed to create a message route"
                 )
-            recipient = agent_for(route, creator=partial(_create, allowed, sender=sender))
+            recipient = agent_for(route, creator=partial(_create, allowed))
     else:
         raise MessagingError("receiver must be an agent ID or a route object")
 
     if not allowed.allows(recipient.record["role"], recipient.agent_id):
         raise MessagingError(
-            f"agent {sender['agent_id']!r} may not send to role "
+            f"agent {sender_id!r} may not send to role "
             f"{recipient.record['role']!r} or agent {recipient.agent_id!r}"
         )
     return recipient
@@ -230,14 +224,10 @@ def _create(
     allowed: AllowedReceivers,
     role: str,
     cwd: str | None = None,
-    *,
-    sender: dict[str, str],
     **record: Any,
 ) -> ag.Agent:
     if not allowed.allows_role(role):
         raise MessagingError(f"role {role!r} is not allowed to create an agent")
-    if sender["role"] == "orchestrator" and role == "worker":
-        record["delegator_agent_id"] = sender["agent_id"]
     return ag.create(role, cwd=cwd, **record)
 
 

@@ -5,30 +5,21 @@ description: Choose workers and send assignments using BeeLoop agent creation an
 
 # Worker delegation
 
-## Choosing workers
+1. Choose a fresh worker or reuse one when its context helps. Give it a coherent
+   scope; it can use native subagents as needed.
+2. For a new worker, call `create_agent(role="worker", cwd=...)`.
+3. Send the assignment with `message` to its agent ID using the prompt below.
+   Include the optional line only when the work may be useful later.
+4. Retain the worker ID and end your turn. Acceptance confirms dispatch, not
+   completion; communicate results or blockers through relevant intakes.
 
-Give workers coherent scopes in the relevant project workspace. Reuse a worker
-you created when its context helps; start fresh for independent work. Workers
-can organize execution and use native subagents or parallel work as needed.
-
-## Dispatch and results
-
-Create a worker with `create_agent(role="worker", cwd=...)`, or reuse a worker
-you created. New workers are authorized to reply to the orchestrator
-that created them; no permission edits are needed.
-
-Read the [assignment prompt](prompts/assignment.md), fill in the workspace,
-scope, context, deliverables, and checks, and send it with `message` to the
-worker's agent ID. Include the optional state prompt below when useful.
-
-Retain the worker ID and end your turn to stay available for intake;
-acceptance confirms dispatch, not completion. Workers return delivery-ready
-results or blockers; communicate them through relevant sources.
+```text
+Assignment: <scope, context, deliverables and checks>
+Report results or blockers back to me using message.
+[Optional: use beeloop-state:save and return work_name and cwd.]
+```
 
 ## Worker state
 
-When a worker's work may be useful later, append the
-[worker-state prompt](prompts/worker-state.md) to explicitly request
-`beeloop-state:save` and the record's `work_name` and `cwd`. Keep a brief summary
-and that reference in your overall record for future sessions. Otherwise the
-worker simply returns results.
+- When a worker returns a saved record, keep a brief summary and its `work_name`
+  and `cwd` in your overall record for future sessions.

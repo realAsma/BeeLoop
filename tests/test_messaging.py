@@ -228,7 +228,6 @@ def test_create_agent_is_authorized_and_does_not_dispatch(beeloop_root, monkeypa
         "cwd": str((beeloop_root / "workspaces" / "target").resolve()),
     }
     assert created.record["turns"] == 0
-    assert "delegator_agent_id" not in created.record
     assert fake.turns(created.agent_id) == []
 
 
@@ -248,67 +247,22 @@ def test_create_agent_requires_role_creation_permission(beeloop_root):
     assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
 
 
-@pytest.mark.parametrize("via_route", [False, True])
-def test_worker_creation_authorizes_only_its_orchestrator_callback(beeloop_root, monkeypatch, via_route):
-    worker_config = 'backend = "fake"\npermissions = "read"\n[backend_options.fake]\nmarker = "preserved"\n'
-    make_role(beeloop_root, "worker", worker_config)
-    sender = orchestrator(backend="fake")
-    bind(sender)
-    submitted = []
-    monkeypatch.setattr(messaging, "_submit", submitted.append)
-    if via_route:
-        result = server.message({"role": "worker", "cwd": "project"}, "assignment")
-        worker_id = result["receiver_agent_id"]
-    else:
-        worker_id = server.create_agent("worker", "project")["agent_id"]
-        assert submitted == []
-        server.message(worker_id, "assignment")
-
-    worker = ag.restore(worker_id)
-    assert worker.record["delegator_agent_id"] == sender.agent_id
-    assert (records.agent_path(worker_id) / "config.toml").read_text() == worker_config
-    assert submitted[0].source == f"agent:{sender.agent_id}"
-    assert submitted[0].msg == "assignment"
+def test_worker_role_allows_orchestrators_but_not_unconfigured_roles(monkeypatch):
+    worker = ag.create("worker", cwd="project", backend="fake")
     bind(worker)
-    server.message(sender.agent_id, "verified results")
-    assert submitted[-1].agent_id == sender.agent_id
-    other = orchestrator(backend="fake")
-    with pytest.raises(server.MessagingError, match="may not send"):
-        server.message(other.agent_id, "wrong callback")
-
-
-@pytest.mark.parametrize("role", ["worker", "planner"])
-def test_non_orchestrator_creation_does_not_grant_callbacks(beeloop_root, role):
-    make_role(beeloop_root, "worker", 'backend = "fake"\n')
-    sender = ag.create(role, cwd="supervisor", backend="fake")
-    bind(sender)
-    rules(sender, roles=["worker"])
-
-    created = ag.restore(server.create_agent("worker", "project")["agent_id"])
-
-    assert "delegator_agent_id" not in created.record
-    bind(created)
-    with pytest.raises(server.MessagingError, match="may not send"):
-        server.message(sender.agent_id, "no implicit callback")
-
-
-def test_messaging_an_existing_worker_does_not_change_its_callback(beeloop_root, monkeypatch):
-    make_role(beeloop_root, "worker", 'backend = "fake"\n')
-    creator = orchestrator(backend="fake")
-    bind(creator)
-    worker_id = server.create_agent("worker", "project")["agent_id"]
-    other = orchestrator(backend="fake")
-    bind(other)
     submitted = []
     monkeypatch.setattr(messaging, "_submit", submitted.append)
+    for _ in range(2):
+        receiver = orchestrator(backend="fake")
+        assert server.message(receiver.agent_id, "results") == accepted(receiver)
+    assert all(item.source == f"agent:{worker.agent_id}" for item in submitted)
 
-    server.message(worker_id, "follow-up")
-
-    assert submitted[0].agent_id == worker_id
-    assert records.read(worker_id)["delegator_agent_id"] == creator.agent_id
-    bind(ag.restore(worker_id))
+    planner = ag.create("planner", cwd="project", backend="fake")
     with pytest.raises(server.MessagingError, match="may not send"):
-        server.message(other.agent_id, "no callback takeover")
+        server.message(planner.agent_id, "not allowed")
+    rules(worker)
+    with pytest.raises(server.MessagingError, match="may not send"):
+        server.message(receiver.agent_id, "no implicit permission")
 
 
 def test_live_generic_creation_and_messaging_dispatch_worker(beeloop_root):
@@ -327,7 +281,6 @@ def test_live_generic_creation_and_messaging_dispatch_worker(beeloop_root):
     worker_id = asyncio.run(dispatch_worker())
     wait_for(lambda: bool(fake.turns(worker_id)))
     assert fake.turns(worker_id) == [[[f"agent:{sender.agent_id}", "work and verify"]]]
-    assert records.read(worker_id)["delegator_agent_id"] == sender.agent_id
 
 
 def test_the_plugin_definitions_bind_each_tools_stdio_environment():
@@ -842,7 +795,6 @@ def test_message_route_uses_the_shared_authorized_creator(beeloop_root, monkeypa
     assert len(calls) == 1
     assert calls[0][0][1:] == ("target",)
     assert calls[0][1] == {
-        "sender": messaging._identity(records.agent_path(sender.agent_id)),
         "cwd": str((beeloop_root / "workspaces" / "target").resolve()),
         "backend": "fake",
         "instance": "named",
