@@ -10,8 +10,10 @@ older work. Create one with `create_agent(role="orchestrator")` only for unrelat
 work, when no suitable orchestrator is available, or when the user explicitly
 requests a new one. An orchestrator's scope can evolve.
 
-Use `list_agents` for current IDs, status, and source connections. Consult
-BeeLoop State for work context when useful.
+Use `list_agents` for current IDs, status, and source connections. When work
+context would help, start with BeeLoop State index summaries. Refresh entries
+updated since your last read when useful; open full records only if the index
+is insufficient to route the intake.
 Use the supplied intake content; the receiving orchestrator can retrieve
 additional source context or attachments when needed.
 

@@ -18,8 +18,8 @@ description: Choose workers and send assignments using BeeLoop agent creation an
    ```
 
 4. Retain the worker ID. Do not wait for worker completion. End your turn; the
-   worker will message you in a later turn. Acceptance confirms dispatch, not
-   completion. Communicate results or blockers through relevant intakes.
+   worker will message you in a later turn. Communicate results or blockers
+   through relevant intakes.
 
 ## Worker state
 
