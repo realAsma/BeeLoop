@@ -51,7 +51,7 @@ echo 'The primary communication channel with the user is the configured Slack ap
 ## Using BeeLoop
 
 Ask for work in Slack, then follow up in the conversation to change direction
-or check progress. Agents have memorable names such as `calm-otter`.
+or check progress.
 
 For example, request a feature: BeeLoop can open a draft pull request, notify
 you in Slack, and handle GitHub review comments until ready. Ask it to set up

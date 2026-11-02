@@ -81,7 +81,7 @@ class Agent:
         where.mkdir(parents=True, exist_ok=True)
 
         stamp = now()
-        agent_id = new_agent_id()
+        agent_id = new_agent_id(stamp)
         record = {
             **extra,
             "type": cls.__name__,

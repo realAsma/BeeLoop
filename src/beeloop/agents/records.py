@@ -9,7 +9,6 @@ import os
 import re
 import secrets
 import tempfile
-import uuid
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -25,7 +24,7 @@ UTC = dt.timezone.utc
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
 PREPARED, DORMANT, CLOSED = "prepared", "dormant", "closed"
 
-AGENT_ID_PATTERN = r"[a-z]{2,12}-[a-z]{2,12}"
+AGENT_ID_PATTERN = r"[a-z]{2,12}-[a-z]{2,12}-(?:0[1-9]|[12][0-9]|3[01])-(?:0[1-9]|1[0-2])-[0-9]{2}"
 _ADJECTIVES = (
     "able agile alert amber ample aqua avid azure "
     "balanced basic beaming bold brave breezy bright brisk "
@@ -88,7 +87,11 @@ def runtime(*parts: str) -> Path:
 
 def agent_path(agent_id: str) -> Path:
     if not isinstance(agent_id, str) or re.fullmatch(AGENT_ID_PATTERN, agent_id) is None:
-        raise AgentError(f"invalid agent ID {agent_id!r}; expected an adjective-noun name")
+        raise AgentError(f"invalid agent ID {agent_id!r}; expected adjective-noun-DD-MM-YY")
+    try:
+        dt.datetime.strptime(agent_id[-8:], "%d-%m-%y")
+    except ValueError as exc:
+        raise AgentError(f"invalid agent ID {agent_id!r}; invalid creation date") from exc
     return root().joinpath("runtime", "agents", agent_id)
 
 
@@ -104,29 +107,21 @@ def now() -> str:
     return dt.datetime.now(UTC).strftime(STAMP)
 
 
-def new_agent_id() -> str:
-    """Reserve a readable ID by atomically creating its agent directory."""
+def new_agent_id(created: str) -> str:
+    """Reserve a readable ID dated by its UTC creation timestamp."""
+    date = dt.datetime.strptime(created, STAMP).strftime("%d-%m-%y")
     directory = runtime("agents")
     capacity = len(_ADJECTIVES) * len(_NOUNS)
     start = secrets.randbelow(capacity)
     for offset in range(capacity):
         adjective, noun = divmod((start + offset) % capacity, len(_NOUNS))
-        agent_id = f"{_ADJECTIVES[adjective]}-{_NOUNS[noun]}"
+        agent_id = f"{_ADJECTIVES[adjective]}-{_NOUNS[noun]}-{date}"
         try:
             (directory / agent_id).mkdir()
         except FileExistsError:
             continue
         return agent_id
-    raise AgentError(f"all {capacity:,} agent names are reserved")
-
-
-def new_timer_id() -> str:
-    """Return a time-ordered UUIDv7 timer ID."""
-    stamp = int(dt.datetime.now(UTC).timestamp() * 1000)
-    raw = bytearray(stamp.to_bytes(6, "big") + secrets.token_bytes(10))
-    raw[6] = (raw[6] & 0x0F) | 0x70
-    raw[8] = (raw[8] & 0x3F) | 0x80
-    return str(uuid.UUID(bytes=bytes(raw)))
+    raise AgentError(f"all {capacity:,} agent names are reserved for {date}")
 
 
 @contextmanager

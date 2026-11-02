@@ -25,7 +25,3 @@ codex plugin add beeloop-tools@beeloop-tools
 # or
 claude plugin update beeloop-tools@beeloop-tools
 ```
-
-This beta update requires fresh agent records in `runtime/agents/` and a fresh
-`runtime/routes.jsonl`. UUID agent IDs are no longer supported. Saved BeeLoop
-State is separate and can be retained.

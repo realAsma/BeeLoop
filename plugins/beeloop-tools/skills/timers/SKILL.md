@@ -12,4 +12,4 @@ bounded recurring wake; omit `duration` to repeat until cancelled.
 Durations are positive integers ending in `s`, `m`, `h`, or `d`. The returned
 timer ID identifies the schedule. Use `timer_list()` to inspect current timers
 and `timer_cancel(timer_id=...)` to remove one. All three tools are bound to the
-current agent.
+current agent. Matching schedules share a timer and append their messages.

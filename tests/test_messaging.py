@@ -592,7 +592,7 @@ def test_route_source_requires_an_allowed_existing_receiver():
 
     with pytest.raises(ag.UnknownAgent):
         server.route_source(
-            route.source, "missing-agent"
+            route.source, "missing-agent-02-11-26"
         )
 
 
@@ -661,11 +661,11 @@ def test_an_exact_unknown_id_is_refused():
     rules(sender, ids=["*"])
 
     with pytest.raises(ag.UnknownAgent):
-        server.message("missing-agent", "hello")
+        server.message("missing-agent-02-11-26", "hello")
 
 
 @pytest.mark.parametrize(
-    "ids", [["*"], ["missing-agent"]]
+    "ids", [["*"], ["missing-agent-02-11-26"]]
 )
 def test_route_creation_requires_an_allowed_role(beeloop_root, monkeypatch, ids):
     make_role(
@@ -684,7 +684,7 @@ def test_route_creation_requires_an_allowed_role(beeloop_root, monkeypatch, ids)
         backend="fake",
         instance="one",
     )
-    route.new("missing-agent")
+    route.new("missing-agent-02-11-26")
 
     with pytest.raises(server.MessagingError, match="not allowed to create"):
         server.message({"role": "target", "instance": "one"}, "hello")

@@ -14,8 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from beeloop import agents as ag
+from beeloop import agents as ag, timers
 from beeloop.agents import records, roles, session_ttl
+from beeloop.agents import agent as agent_module
 from beeloop.agents.backends import BackendError, InputItem, fake
 from beeloop.config import config_path
 from tests.conftest import SOURCE, as_fake, make_role, orchestrator, poke, worker
@@ -31,7 +32,7 @@ def test_root_rejects_a_path_that_is_not_a_directory(monkeypatch, tmp_path):
 
 
 def test_resolving_an_agent_path_does_not_create_it():
-    missing = "missing-agent"
+    missing = "missing-agent-02-11-26"
 
     path = records.agent_path(missing)
 
@@ -39,13 +40,23 @@ def test_resolving_an_agent_path_does_not_create_it():
     assert not path.exists()
 
 
-def test_agent_ids_are_readable_while_sessions_and_timers_remain_uuids():
+def test_agent_ids_include_the_creation_date_while_sessions_remain_uuids():
     agent = orchestrator(backend="fake")
 
-    assert re.fullmatch(r"[a-z]+-[a-z]+", agent.agent_id)
+    assert re.fullmatch(r"[a-z]+-[a-z]+-[0-9]{2}-[0-9]{2}-[0-9]{2}", agent.agent_id)
+    assert agent.agent_id[-8:] == timers.parse_timestamp(agent.record["created"]).strftime("%d-%m-%y")
     assert records.agent_path(agent.agent_id).is_dir()
     assert uuid.UUID(agent.session_id).version == 4
-    assert all(uuid.UUID(timer["timer_id"]).version == 7 for timer in agent.record["timers"])
+
+
+def test_agent_name_and_record_share_one_utc_creation_time(monkeypatch):
+    monkeypatch.setattr(agent_module, "now", lambda: "2026-11-02T23:59:59Z")
+    monkeypatch.setattr(records, "now", lambda: "2026-11-03T00:00:00Z")
+
+    agent = worker(backend="fake")
+
+    assert agent.agent_id.endswith("-02-11-26")
+    assert agent.record["created"] == "2026-11-02T23:59:59Z"
 
 
 def test_closed_agent_names_stay_reserved(monkeypatch):
@@ -72,16 +83,29 @@ def test_agent_name_exhaustion_is_bounded(monkeypatch):
     monkeypatch.setattr(records, "_ADJECTIVES", ["calm"])
     monkeypatch.setattr(records, "_NOUNS", ["otter", "heron"])
     monkeypatch.setattr(records.secrets, "randbelow", lambda _: 1)
-    assert records.new_agent_id() == "calm-heron"
-    assert records.new_agent_id() == "calm-otter"
+    assert records.new_agent_id("2026-11-02T23:59:59Z") == "calm-heron-02-11-26"
+    assert records.new_agent_id("2026-11-02T23:59:59Z") == "calm-otter-02-11-26"
 
     with pytest.raises(ag.AgentError, match="all 2 agent names are reserved"):
-        records.new_agent_id()
+        records.new_agent_id("2026-11-02T23:59:59Z")
+
+
+def test_agent_name_namespace_resets_on_the_next_utc_day(monkeypatch):
+    monkeypatch.setattr(records, "_ADJECTIVES", ["calm"])
+    monkeypatch.setattr(records, "_NOUNS", ["otter"])
+    first = records.new_agent_id("2026-11-02T23:59:59Z")
+    second = records.new_agent_id("2026-11-03T00:00:00Z")
+
+    assert first == "calm-otter-02-11-26"
+    assert second == "calm-otter-03-11-26"
+    assert records.agent_path(first).is_dir()
+    assert records.agent_path(second).is_dir()
 
 
 @pytest.mark.parametrize("agent_id", [
-    "../calm-otter", "/tmp/calm-otter", "calm-otter/record.json",
-    "Calm-otter", "calm_otter", "calm-otter\n",
+    "../calm-otter-02-11-26", "/tmp/calm-otter-02-11-26", "calm-otter-02-11-26/record.json",
+    "Calm-otter-02-11-26", "calm_otter-02-11-26", "calm-otter-02-11-26\n",
+    "calm-otter", "calm-otter-31-02-26", "calm-otter-00-11-26",
     "0198ff2a-0000-7000-8000-000000000000",
 ])
 def test_agent_paths_reject_invalid_and_legacy_ids(agent_id):

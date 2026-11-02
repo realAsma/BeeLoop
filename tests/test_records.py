@@ -21,7 +21,7 @@ def test_an_agent_id_continues_and_a_role_creates():
 
 def test_naming_an_agent_that_does_not_exist_raises_rather_than_creating_one():
     """A silent cold start would strand whatever was pointing at the old id."""
-    missing = "missing-agent"
+    missing = "missing-agent-02-11-26"
     with pytest.raises(ag.UnknownAgent, match="runtime/agents"):
         ag.Agent(missing)
     assert not records.record_path(missing).exists()

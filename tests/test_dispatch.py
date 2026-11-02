@@ -471,7 +471,7 @@ def test_an_envelope_arriving_mid_turn_is_parked_not_dropped(routes):
 
 def test_an_envelope_naming_an_unknown_agent_fails_loudly(routes):
     with pytest.raises(ag.UnknownAgent):
-        dsp.dispatch(env.parse("agent_id=missing-agent\n"
+        dsp.dispatch(env.parse("agent_id=missing-agent-02-11-26\n"
                                "source=timer:t\nmsg=hello"))
 
 
