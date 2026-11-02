@@ -5,6 +5,8 @@ description: Create BeeLoop agents with create_agent, or configure reusable role
 
 # Create a BeeLoop agent
 
+Agent creation requires a harness-bound caller.
+
 1. Call `get_beeloop_root()` and reuse `<root>/configs/roles/<role>/` if it
    exists; otherwise create it.
    Preserve existing role files unless the request requires changes.

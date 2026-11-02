@@ -14,7 +14,7 @@ max_age = "24h"
 every = "4h"
 
 [prompts]
-session_init = "This is your first turn. Use the first-turn flow."
+session_init = "This is your first turn. Reply to the relevant intakes and dispatch work first. As your final action before ending the turn, use beeloop-state:save to initialize one overall BeeLoop State record named orchestrator-<your-agent-id> from the supplied work."
 session_expire = "This session is expiring. Use the BeeLoop State save flow and return a concise handoff hint for continuing the work later."
 session_resume = "This is a new session for existing work. Use the BeeLoop State continue flow with the previous session handoff below."
 heartbeat = "This is a heartbeat. Use the heartbeat flow."

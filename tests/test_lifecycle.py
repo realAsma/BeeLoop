@@ -3,9 +3,8 @@
 The agent does, not the dispatcher: a caller hands an agent a batch and should
 never have to know that the conversation underneath it can die.
 
-Only the death case is here, because only one type exists. The type that
-SURVIVES a lost session -- by refreshing under the same agent_id -- arrives with
-its own class and its own schema, and will bring the mirror of these tests.
+Terminal backend session loss closes the agent; nonterminal failures propagate
+without retiring it.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from tests.conftest import as_fake, worker
 
 
 def test_a_plain_agent_that_loses_its_session_dies():
-    """A worker has nothing to brief a replacement from, so terminal is death."""
+    """Terminal failure closes the agent without creating a replacement."""
     agent = as_fake(worker())
     fake.fail_session(agent.session_id, "terminal: no conversation found")
 

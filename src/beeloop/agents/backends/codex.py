@@ -9,9 +9,16 @@ import shutil
 import subprocess
 import uuid
 from typing import Any, Sequence
-from xml.sax.saxutils import quoteattr
 
-from .base import Backend, BackendError, Delivery, Fault, InputItem, Session
+from .base import (
+    Backend,
+    BackendError,
+    Delivery,
+    Fault,
+    InputItem,
+    Session,
+    render_inputs as _render,
+)
 
 _TERMINAL_SESSION_MARKERS = (
     "session not found:",
@@ -104,10 +111,28 @@ def _argv(session: Session, prompt: str) -> list[str]:
     argv = [_binary(), "exec", "--json", "--skip-git-repo-check", *profile]
     if model := session.options.get("model"):
         argv += ["--model", str(model)]
+    overrides = session.options.get("config", {})
+    if not isinstance(overrides, dict):
+        raise BackendError("Codex config overrides must be a table")
+    for key, value in overrides.items():
+        if not isinstance(key, str) or not key:
+            raise BackendError("Codex config override keys must be non-empty strings")
+        argv += ["-c", f"{key}={_config_value(value)}"]
     if not session.prepared:
         argv += ["resume", session.session_id]
     argv.append(prompt)
     return argv
+
+
+def _config_value(value: Any) -> str:
+    if isinstance(value, list):
+        return "[" + ", ".join(_config_value(item) for item in value) + "]"
+    if isinstance(value, (str, bool, int, float)):
+        try:
+            return json.dumps(value, ensure_ascii=False, allow_nan=False)
+        except ValueError as exc:
+            raise BackendError(f"invalid Codex config value: {exc}") from exc
+    raise BackendError("Codex config override values must be TOML scalars or lists")
 
 
 def _binary() -> str:
@@ -144,19 +169,3 @@ def _result(output: str) -> tuple[str, str]:
     if not thread_id:
         raise BackendError("codex output did not include a thread.started event")
     return thread_id, text
-
-
-def _render(inputs: Sequence[InputItem]) -> str:
-    if not inputs:
-        raise BackendError("nothing to deliver; an empty batch is a caller bug")
-
-    framed = "\n".join(
-        f"<input source={quoteattr(item.source)}>\n{item.content}\n</input>"
-        for item in inputs
-    )
-    if len(inputs) == 1:
-        return framed
-    return (
-        f"{len(inputs)} inputs arrived, in the order they were received.\n\n"
-        f"{framed}"
-    )

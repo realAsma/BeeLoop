@@ -11,7 +11,7 @@ from beeloop import agents as ag
 from beeloop import timers
 from beeloop.agents import records, session_ttl
 from beeloop.agents import timers as agent_timers
-from beeloop.agents.backends import InputItem, fake
+from beeloop.agents.backends import BackendError, InputItem, fake
 from beeloop.dispatch.dispatch import dispatch
 from tests.conftest import as_fake, make_role, orchestrator, worker
 
@@ -52,6 +52,47 @@ def test_orchestrator_starts_with_its_role_lifecycle_timers():
     assert heartbeat.payload == {"message": agent.role.prompt("heartbeat")}
     assert heartbeat.every_seconds == 14400
     assert heartbeat.until is None
+
+
+def test_router_rotates_after_three_weeks_without_idle_expiry_or_heartbeat(monkeypatch):
+    router = ag.create("router", backend="fake")
+    agent_id = router.agent_id
+    old_session = router.session_id
+    since = timers.parse_timestamp(router.record["session_since"])
+    assert router.ttl_policy == session_ttl.Policy(max_age_seconds=21 * 86400)
+    assert router.role.heartbeat is None
+    assert router.session().permissions == "read"
+    assert agent_timers.list_wakes(agent_id) == [ttl_timer(router)]
+    deadline = timers.timestamp(since + dt.timedelta(days=21))
+    assert ttl_timer(router).due_at == deadline
+
+    monkeypatch.setattr(agent_module, "now", lambda: timers.timestamp(since + dt.timedelta(days=10)))
+    router.spin([InputItem("source", "route new intake")])
+    assert ttl_timer(router).due_at == deadline
+
+    expiry = router.role.prompt("session_expire")
+    assert "handoff only" in expiry
+    assert "Do not write BeeLoop State, delegate work, or change source mappings" in expiry
+    envelope = agent_timers.poll(reach_ttl(monkeypatch, router))
+    assert envelope is not None
+    dispatch(envelope)
+    assert records.read(agent_id)["status"] == records.DORMANT
+    assert records.read(agent_id)["session_id"] is None
+    assert agent_timers.list_wakes(agent_id) == []
+    assert fake.turns(agent_id)[-1] == [[envelope.source, expiry]]
+
+    continued = ag.restore(agent_id)
+    continued.spin([InputItem("source", "next intake")])
+    resume = continued.role.prompt("session_resume")
+    assert "list_agents" in resume
+    assert "State continue" not in resume
+    assert fake.turns(agent_id)[-1][0][0] == session_ttl.RESTORE_SOURCE
+    assert fake.turns(agent_id)[-1][0][1].startswith(resume)
+    assert fake.turns(agent_id)[-1][-1] == ["source", "next intake"]
+    assert continued.agent_id == agent_id
+    assert continued.session_id != old_session
+    assert continued.record["session_turns"] == 1
+    assert ttl_timer(continued).due_at == timers.timestamp(since + dt.timedelta(days=42))
 
 
 def test_role_ttl_requires_a_supported_positive_duration(beeloop_root):
@@ -351,3 +392,49 @@ def test_failed_ttl_save_still_detaches_with_a_fallback_handoff(monkeypatch):
     assert "expired before it could save" in session_ttl.handoff_path(
         agent.agent_id
     ).read_text("utf-8")
+
+
+def test_failed_planned_wake_retains_handoff_for_later_intake(monkeypatch):
+    agent = as_fake(orchestrator())
+    reach_ttl(monkeypatch, agent)
+    agent.spin([InputItem(f"{session_ttl.EXPIRY_SOURCE}:ttl", "saved context")])
+    handoff = session_ttl.read_handoff(agent.agent_id)
+    assert handoff
+    deliver = agent.backend.deliver
+    failed_sessions = []
+
+    def fail_wake(session, inputs):
+        failed_sessions.append(session.session_id)
+        raise BackendError("connection reset")
+
+    monkeypatch.setattr(agent.backend, "deliver", fail_wake)
+    with pytest.raises(BackendError, match="connection reset"):
+        agent.spin([InputItem("source", "first intake")])
+
+    assert len(failed_sessions) == 1
+    assert agent.status == records.DORMANT
+    assert agent.session_id is None
+    assert session_ttl.read_handoff(agent.agent_id) == handoff
+    monkeypatch.setattr(agent.backend, "deliver", deliver)
+    agent.spin([InputItem("source", "later intake")])
+
+    assert agent.status == "active"
+    assert agent.session_id != failed_sessions[0]
+    assert handoff in fake.turns(agent.agent_id)[-1][0][1]
+    assert fake.turns(agent.agent_id)[-1][-1] == ["source", "later intake"]
+    assert session_ttl.read_handoff(agent.agent_id) is None
+
+
+def test_terminal_failure_during_planned_wake_stays_closed(monkeypatch):
+    agent = as_fake(orchestrator())
+    reach_ttl(monkeypatch, agent)
+    agent.spin([InputItem(f"{session_ttl.EXPIRY_SOURCE}:ttl", "saved context")])
+
+    def fail_wake(session, inputs):
+        raise BackendError("terminal: session not found")
+
+    monkeypatch.setattr(agent.backend, "deliver", fail_wake)
+    with pytest.raises(ag.NotResumable, match="lost its session"):
+        agent.spin([InputItem("source", "intake")])
+
+    assert records.read(agent.agent_id)["status"] == records.CLOSED

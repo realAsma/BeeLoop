@@ -14,7 +14,7 @@ from beeloop.agents.records import runtime
 from beeloop.agents.roles import load_role, workspace
 from beeloop.dispatch.envelope import Envelope
 
-DEFAULT_ROLE = "orchestrator"
+DEFAULT_ROLE = "router"
 KEY = ("source", "cwd", "role", "backend", "instance")
 
 
@@ -49,7 +49,7 @@ class Route:
             cwd=str(workspace(configured, envelope.cwd)),
             role=role,
             backend=backend,
-            instance=envelope.instance,
+            instance=(envelope.instance or "default") if role == "router" else envelope.instance,
         )
 
     def row(self, agent_id: str | None) -> dict[str, Any]:
@@ -98,7 +98,8 @@ def _matches(row: Mapping[str, Any], key: Route) -> bool:
 
 def _restored(agent_id: str) -> ag.Agent | None:
     try:
-        return ag.restore(agent_id)
+        found = ag.restore(agent_id)
+        return found if found.status != "closed" else None
     except ag.AgentError:
         return None
 
@@ -119,6 +120,8 @@ def agent_for(key: Route, creator: AgentCreator = ag.create) -> ag.Agent:
         try:
             if (agent_id := key.resolve()) and (found := _restored(agent_id)):
                 return found
+            if key.role == "router":
+                return _router_for(key, creator)
             extra = {"instance": key.instance} if key.instance else {}
             new_agent = creator(
                 key.role, cwd=key.cwd, backend=key.backend, **extra
@@ -127,6 +130,44 @@ def agent_for(key: Route, creator: AgentCreator = ag.create) -> ag.Agent:
             return new_agent
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def _router_for(key: Route, creator: AgentCreator) -> ag.Agent:
+    """Resolve the shared router and map this source while holding the route lock."""
+    router = Route("beeloop:router", key.cwd, key.role, key.backend, "default")
+    agent_id = router.resolve()
+    found = _restored(agent_id) if agent_id else None
+    if found is None:
+        found = creator("router", cwd=key.cwd, backend=key.backend, instance="default")
+        router.new(found.agent_id)
+    key.new(found.agent_id)
+    return found
+
+
+def owned_route(source: str, agent_id: str) -> Route:
+    """Find a persistent source mapping currently owned by an agent."""
+    current = {}
+    for row in _rows():
+        if row.get("source") == source:
+            current[tuple(row.get(field) for field in KEY)] = row
+    matches = [row for row in current.values() if row.get("agent_id") == agent_id]
+    if not matches:
+        raise RouteError(f"source {source!r} has no route owned by this agent")
+    if len(matches) != 1:
+        raise RouteError(f"source {source!r} has multiple routes owned by this agent")
+    return Route(**{field: matches[0].get(field) for field in KEY})
+
+
+def connected_sources() -> dict[str, list[str]]:
+    """Return current source mappings grouped by recipient."""
+    current = {}
+    for row in _rows():
+        current[tuple(row.get(field) for field in KEY)] = row
+    grouped: dict[str, set[str]] = {}
+    for row in current.values():
+        if row.get("agent_id"):
+            grouped.setdefault(row["agent_id"], set()).add(row["source"])
+    return {agent_id: sorted(sources) for agent_id, sources in grouped.items()}
 
 
 def reassign(key: Route, owner_agent_id: str, receiver_agent_id: str) -> None:

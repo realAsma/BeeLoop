@@ -1,19 +1,20 @@
 # Private Slack input
 
-This source connects BeeLoop to one configured Slack user through Socket Mode.
-It accepts only private `message.im` events from that user and creates one
-persistent orchestrator per Slack thread. Message bodies and file bytes are
-fetched only after intake authentication.
+This Socket Mode source accepts only the configured user's private `message.im`
+events. Authenticated intake includes text, links, rich blocks, attachments, and
+file/image metadata, including file-only and image-only messages. Ordinary
+messages need no extra fetch; the helper retrieves fuller thread context and
+file bytes as needed, returning absolute paths for native document and image
+tools. Initial metadata does not inline images.
 
-`reply` and `upload` answer inside a thread this input authenticated. The
-`dm-thread` helper is the one outbound path with no inbound event behind it: it
-opens a new thread in the owner's DM for scheduled work the owner configured,
-such as the `research-digest` input. Its destination is always
-`SLACK_ALLOWED_USER_ID`.
+`reply` and `upload` answer threads authenticated by this input. Only `dm-thread`
+sends without an inbound event: it opens an owner DM thread for owner-configured
+scheduled work (such as `research-digest`), always targeting `SLACK_ALLOWED_USER_ID`.
 
 ## Setup
 
-1. Install the optional dependency:
+1. Use the Python environment where BeeLoop is installed, and add its Slack
+   dependency:
 
 ```sh
 python3 -m pip install -e '.[slack]'

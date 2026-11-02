@@ -6,6 +6,8 @@
 !/src/**
 !/tests/test_gateway.py
 !/orchestrator/**
+!/router/**
+!/configs/**
 !/plugins/**
 !/.claude-plugin/marketplace.json
 !/.agents/

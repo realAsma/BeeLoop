@@ -80,6 +80,7 @@ def test_an_empty_directory_is_a_working_role(beeloop_root):
     ("name", "backend", "permissions", "cwd"),
     [
         ("orchestrator", "codex", "approve_for_me", "orchestrator"),
+        ("router", "codex", "read", "router"),
         ("worker", "claude_code", "approve_for_me", None),
         ("planner", "claude_code", "read", None),
     ],
@@ -166,53 +167,25 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
         idle_seconds=3600, max_age_seconds=86400
     )
     assert role.heartbeat == "4h"
-    assert role.prompts == {
-        "session_init": (
-            "This is your first turn. Use the first-turn flow."
-        ),
-        "session_expire": (
-            "This session is expiring. Use the BeeLoop State save flow and return "
-            "a concise handoff hint for continuing the work later."
-        ),
-        "session_resume": (
-            "This is a new session for existing work. Use the BeeLoop State continue "
-            "flow with the previous session handoff below."
-        ),
-        "heartbeat": "This is a heartbeat. Use the heartbeat flow.",
-    }
+    assert role.prompts == config["prompts"]
+    assert set(role.prompts) == {"session_init", "session_expire", "session_resume", "heartbeat"}
+    assert all(prompt.strip() for prompt in role.prompts.values())
     assert config["allowed_receivers"]["roles"] == ["*"]
 
     workspace = SOURCE / "orchestrator"
     canonical = workspace / ".agents" / "skills"
     instructions = (workspace / "AGENTS.md").read_text(encoding="utf-8")
     soul = (workspace / "SOUL_template.md").read_text(encoding="utf-8")
-    first_turn = (canonical / "orchestrator-first-turn" / "SKILL.md").read_text()
-    outside = (canonical / "outside-orchestrator" / "SKILL.md").read_text()
     assert "`event-driven-operation` skill" in instructions
     assert "`worker-delegation` skill" in instructions
     assert "an uplifting chief of staff and personal assistant" in soul
-    assert "Call `get_agent_id()` first" in first_turn
-    assert "`outside-orchestrator` skill" in first_turn
-    assert "On every user turn" in outside
-    assert "simple question directly" in outside
-    assert all(term in outside for term in ("coding", "planning", "job launching"))
-    assert "primary in the BeeLoop harness" in outside
-    assert all(
-        term in outside
-        for term in (
-            "only after completion",
-            "`agent_art/messages/<short-sender-descriptor>`",
-            "primary's current working directory",
-        )
-    )
+    assert role.type == "Agent"
     assert (workspace / ".gitignore").read_text(encoding="utf-8") == (
         "/secrets.env\n/SOUL.md\n/MEMORY.md\n/agent_art/\n/workspaces/\n"
     )
     for name in (
         "event-driven-operation",
-        "orchestrator-first-turn",
         "orchestrator-heartbeat",
-        "outside-orchestrator",
         "worker-delegation",
         "workspace-management",
     ):
@@ -240,6 +213,15 @@ def test_role_prompts_are_an_open_string_registry(beeloop_root):
     assert role.prompt("disabled", "fallback") is None
     assert role.prompt("missing", "fallback") == "fallback"
     assert role.prompt("missing") is None
+
+
+def test_router_configuration_and_instructions_are_available(beeloop_root):
+    role = ag.load_role("router")
+    assert role.type == "Agent"
+    assert role.cwd == beeloop_root / "router"
+    assert role.options["model"] == "gpt-6.1-terra"
+    assert (role.cwd / "AGENTS.md").is_file()
+    assert (role.cwd / "CLAUDE.md").read_text().strip() == "@AGENTS.md"
 
 
 @pytest.mark.parametrize("config", ['prompts = "no"\n', "[prompts]\nbad = 1\n"])

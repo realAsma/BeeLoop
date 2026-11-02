@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -115,6 +116,8 @@ def test_dispatch_uses_the_current_python(beeloop_root: Path, monkeypatch):
     assert calls[0][0] == [sys.executable, "-m", "beeloop.dispatch.dispatch"]
     assert calls[0][1]["cwd"] == beeloop_root
     assert calls[0][1]["start_new_session"] is True
+    assert calls[0][1]["env"]["PATH"].split(os.pathsep)[0] == str(Path(sys.executable).parent)
+    assert calls[0][1]["env"]["BEELOOP_PYTHON"] == sys.executable
 
 
 @pytest.mark.parametrize("value", ["nope", "0", "-1", "nan", "inf"])
@@ -123,3 +126,13 @@ def test_interval_errors_are_actionable(value: str, monkeypatch, capsys):
 
     assert cli.main([]) == 2
     assert gateway.INTERVAL_ENV in capsys.readouterr().err
+
+
+def test_adapters_use_the_gateways_python_environment(beeloop_root, monkeypatch):
+    adapter = beeloop_root / "adapter"
+    _adapter(adapter, "printf '%s' \"$PATH\"")
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+    output = gateway._run_adapter(adapter, beeloop_root, beeloop_root / "inputs.log")
+
+    assert output.decode().split(os.pathsep)[0] == str(Path(sys.executable).parent)

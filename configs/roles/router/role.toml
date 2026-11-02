@@ -1,0 +1,23 @@
+backend = "codex"
+permissions = "read"
+cwd = "router"
+
+[backend_options.codex]
+model = "gpt-6.1-terra"
+
+[backend_options.codex.config]
+'plugins.beeloop-tools@beeloop-tools.mcp_servers.beeloop-tools.enabled_tools' = ["get_agent_id", "get_beeloop_root", "list_agents", "create_agent", "message", "route_source"]
+'plugins.beeloop-tools@beeloop-tools.mcp_servers.beeloop-tools.default_tools_approval_mode' = "approve"
+'plugins.beeloop-state@beeloop-state.mcp_servers.state.enabled_tools' = ["state_index_search", "state_get"]
+'plugins.beeloop-state@beeloop-state.mcp_servers.state.default_tools_approval_mode' = "approve"
+
+[allowed_receivers]
+roles = ["orchestrator"]
+
+[session_ttl]
+max_age = "21d"
+
+[prompts]
+session_init = "Read AGENTS.md and connect the incoming sources to an orchestrator."
+session_expire = "Return a concise routing handoff only. Do not write BeeLoop State, delegate work, or change source mappings."
+session_resume = "Read AGENTS.md, discover current orchestrators and source mappings with list_agents, then continue the pending intake using the routing handoff below."

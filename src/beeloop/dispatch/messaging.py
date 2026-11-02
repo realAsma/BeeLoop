@@ -1,4 +1,4 @@
-"""Asynchronous messaging for BeeLoop agents and direct-user sessions."""
+"""Authorized asynchronous messaging for harness-bound BeeLoop agents."""
 
 from __future__ import annotations
 
@@ -15,7 +15,14 @@ from beeloop import agents as ag
 from beeloop.agents.records import root
 from beeloop.agents.roles import load_role, workspace
 from beeloop.dispatch.envelope import Envelope, serialize
-from beeloop.dispatch.routes import Route, RouteError, agent_for, reassign
+from beeloop.dispatch.routes import (
+    Route,
+    RouteError,
+    agent_for,
+    connected_sources,
+    owned_route,
+    reassign,
+)
 
 
 class MessagingError(RuntimeError):
@@ -40,8 +47,6 @@ class AllowedReceivers:
 
 
 ROUTE_FIELDS = frozenset({"role", "cwd", "instance"})
-DIRECT_SOURCE = "user:direct"
-DIRECT_RECEIVERS = AllowedReceivers(frozenset({"*"}), frozenset())
 
 
 def agent_id(sender_directory: Path) -> str:
@@ -50,12 +55,13 @@ def agent_id(sender_directory: Path) -> str:
 
 
 def create_agent(
-    sender_directory: Path | None,
+    sender_directory: Path,
     role: str,
     cwd: str | None = None,
 ) -> dict[str, str]:
     """Authorize and create an agent without dispatching a turn."""
-    allowed = _receiver_policy(sender_directory)
+    _identity(sender_directory)
+    allowed = _allowed_receivers(sender_directory / "config.toml")
     created = _create(allowed, role, cwd=cwd)
     return {
         "agent_id": created.agent_id,
@@ -65,7 +71,7 @@ def create_agent(
 
 
 def send(
-    sender_directory: Path | None,
+    sender_directory: Path,
     receiver: str | dict[str, Any],
     msg: str,
 ) -> dict[str, str]:
@@ -73,14 +79,10 @@ def send(
     if not msg.strip():
         raise MessagingError("msg must not be empty")
 
-    if sender_directory is None:
-        sender_id = DIRECT_SOURCE
-        source = DIRECT_SOURCE
-    else:
-        sender_id = _identity(sender_directory)["agent_id"]
-        source = f"agent:{sender_id}"
+    sender_id = _identity(sender_directory)["agent_id"]
+    source = f"agent:{sender_id}"
     recipient = _resolve(
-        receiver, sender_id, source, _receiver_policy(sender_directory)
+        receiver, sender_id, source, _allowed_receivers(sender_directory / "config.toml")
     )
 
     _submit(
@@ -111,10 +113,6 @@ def route_source(
         raise MessagingError("receiver_agent_id must be a non-empty string")
 
     sender = _identity(sender_directory)
-    instance = sender.get("instance")
-    if not isinstance(instance, str) or not instance or instance == "fresh":
-        raise MessagingError("the calling agent does not have a persistent instance")
-
     receiver = ag.restore(receiver_agent_id)
     allowed = _allowed_receivers(sender_directory / "config.toml")
     if not allowed.allows(receiver.record["role"], receiver.agent_id):
@@ -122,18 +120,10 @@ def route_source(
             f"agent {sender['agent_id']!r} may not route to role "
             f"{receiver.record['role']!r} or agent {receiver.agent_id!r}"
         )
-    if (
-        receiver.record["role"] != sender["role"]
-        or str(receiver.cwd) != sender["cwd"]
-        or receiver.record["backend"] != sender["backend"]
-    ):
-        raise MessagingError(
-            "a routed source receiver must have the calling agent's role, cwd, "
-            "and backend"
-        )
-
-    route = Route(source, sender["cwd"], sender["role"], sender["backend"], instance)
+    if receiver.status == "closed":
+        raise MessagingError("cannot route a source to a closed agent")
     try:
+        route = owned_route(source, sender["agent_id"])
         reassign(route, sender["agent_id"], receiver.agent_id)
     except RouteError as exc:
         raise MessagingError(str(exc)) from exc
@@ -142,6 +132,23 @@ def route_source(
         "receiver_agent_id": receiver.agent_id,
         "receiver_role": receiver.record["role"],
     }
+
+
+def list_agents(sender_directory: Path) -> list[dict[str, Any]]:
+    """List permitted agents for routing and conversation discovery."""
+    _identity(sender_directory)
+    allowed = _allowed_receivers(sender_directory / "config.toml")
+    agents = []
+    sources = connected_sources()
+    for path in sorted((root() / "runtime" / "agents").glob("*/record.json")):
+        record = json.loads(path.read_text("utf-8"))
+        if allowed.allows(record["role"], record["agent_id"]):
+            item = {key: record[key] for key in (
+                "agent_id", "role", "cwd", "status", "last_turn",
+            )}
+            item["sources"] = sources.get(record["agent_id"], [])
+            agents.append(item)
+    return agents
 
 
 def _identity(directory: Path) -> dict[str, str]:
@@ -174,12 +181,6 @@ def _allowed_receivers(path: Path) -> AllowedReceivers:
             f"cannot read allowed_receivers from {path}: {exc}"
         ) from exc
     return AllowedReceivers(frozenset(roles), frozenset(ids))
-
-
-def _receiver_policy(sender_directory: Path | None) -> AllowedReceivers:
-    if sender_directory is None:
-        return DIRECT_RECEIVERS
-    return _allowed_receivers(sender_directory / "config.toml")
 
 
 def _string_list(value: Any, path: Path, field: str) -> list[str]:

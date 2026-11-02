@@ -117,7 +117,7 @@ async def live_session(agent: ag.Agent | None = None):
 
 
 @pytest.mark.parametrize("bound", [True, False])
-def test_the_live_server_exposes_tools_bound_and_unbound(bound, beeloop_root):
+def test_server_introspection_with_and_without_agent_binding(bound, beeloop_root):
     agent = orchestrator()
 
     async def inspect_server():
@@ -135,6 +135,7 @@ def test_the_live_server_exposes_tools_bound_and_unbound(bound, beeloop_root):
         "create_agent",
         "message",
         "route_source",
+        "list_agents",
         "timer_create",
         "timer_list",
         "timer_cancel",
@@ -147,12 +148,13 @@ def test_the_live_server_exposes_tools_bound_and_unbound(bound, beeloop_root):
     assert set(create.input_schema["properties"]) == {"role", "cwd"}
     assert set(create.input_schema["required"]) == {"role"}
     assert "without starting" in create.description
-    tool = listed.tools[3]
+    by_name = {tool.name: tool for tool in listed.tools}
+    tool = by_name["message"]
     message = tool.input_schema
     assert set(message["properties"]) == {"receiver", "msg"}
     assert set(message["required"]) == {"receiver", "msg"}
     assert "fresh" in tool.description
-    route = listed.tools[4]
+    route = by_name["route_source"]
     assert set(route.input_schema["properties"]) == {"source", "receiver_agent_id"}
     assert set(route.input_schema["required"]) == {"source", "receiver_agent_id"}
     assert "existing agent" in route.description
@@ -166,8 +168,9 @@ def test_live_tool_errors_keep_the_actionable_reason():
     async def inspect_errors():
         async with live_session() as session:
             for name, arguments, reason in [
-                ("message", {"receiver": "missing", "msg": ""}, "msg must not be empty"),
-                ("create_agent", {"role": "missing"}, "no role 'missing'"),
+                ("message", {"receiver": "missing", "msg": ""}, "requires a bound BeeLoop agent"),
+                ("create_agent", {"role": "missing"}, "requires a bound BeeLoop agent"),
+                ("list_agents", {}, "requires a bound BeeLoop agent"),
                 ("timer_list", {}, "requires a bound BeeLoop agent"),
             ]:
                 result = await session.call_tool(name, arguments)
@@ -244,21 +247,40 @@ def test_create_agent_requires_role_creation_permission(beeloop_root):
     assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
 
 
-def test_unbound_create_agent_is_a_trusted_user_operation(beeloop_root):
-    make_role(
-        beeloop_root,
-        "target",
-        'backend = "fake"\ncwd = "workspaces/target"\n',
-    )
+def test_worker_role_allows_orchestrators_but_not_unconfigured_roles(monkeypatch):
+    worker = ag.create("worker", cwd="project", backend="fake")
+    bind(worker)
+    submitted = []
+    monkeypatch.setattr(messaging, "_submit", submitted.append)
+    for _ in range(2):
+        receiver = orchestrator(backend="fake")
+        assert server.message(receiver.agent_id, "results") == accepted(receiver)
+    assert all(item.source == f"agent:{worker.agent_id}" for item in submitted)
 
-    result = server.create_agent("target")
+    planner = ag.create("planner", cwd="project", backend="fake")
+    with pytest.raises(server.MessagingError, match="may not send"):
+        server.message(planner.agent_id, "not allowed")
+    rules(worker)
+    with pytest.raises(server.MessagingError, match="may not send"):
+        server.message(receiver.agent_id, "no implicit permission")
 
-    created = ag.restore(result["agent_id"])
-    assert result == {
-        "agent_id": created.agent_id,
-        "role": "target",
-        "cwd": str((beeloop_root / "workspaces" / "target").resolve()),
-    }
+
+def test_live_generic_creation_and_messaging_dispatch_worker(beeloop_root):
+    make_role(beeloop_root, "worker", 'backend = "fake"\n')
+    sender = orchestrator(backend="fake")
+
+    async def dispatch_worker():
+        async with live_session(sender) as session:
+            created = await session.call_tool("create_agent", {"role": "worker", "cwd": "project"})
+            assert not created.is_error
+            worker_id = created.structured_content["agent_id"]
+            sent = await session.call_tool("message", {"receiver": worker_id, "msg": "work and verify"})
+            assert not sent.is_error
+            return worker_id
+
+    worker_id = asyncio.run(dispatch_worker())
+    wait_for(lambda: bool(fake.turns(worker_id)))
+    assert fake.turns(worker_id) == [[[f"agent:{sender.agent_id}", "work and verify"]]]
 
 
 def test_the_plugin_definitions_bind_each_tools_stdio_environment():
@@ -294,8 +316,16 @@ def test_the_optional_binding_comes_from_the_environment_and_must_be_absolute(
     assert server.AGENT_DIRECTORY == directory
 
 
-def test_unbound_identity_is_none():
+def test_identity_without_binding_is_none():
     assert server.get_agent_id() is None
+
+
+def test_agent_discovery_respects_receiver_permissions():
+    sender, receiver = sender_and_receiver()
+    rules(sender)
+    assert server.list_agents() == []
+    rules(sender, ids=[receiver.agent_id])
+    assert [item["agent_id"] for item in server.list_agents()] == [receiver.agent_id]
 
 
 def test_identity_is_read_from_the_bound_record_on_every_call():
@@ -313,13 +343,16 @@ def test_identity_is_read_from_the_bound_record_on_every_call():
 @pytest.mark.parametrize(
     "call",
     [
-        lambda: server.route_source("user:direct", "agent"),
+        lambda: server.create_agent("worker", "project"),
+        lambda: server.message("agent", "work"),
+        server.list_agents,
+        lambda: server.route_source("slack:thread", "agent"),
         lambda: server.timer_create("check", after="1h"),
         server.timer_list,
         lambda: server.timer_cancel("timer"),
     ],
 )
-def test_bound_only_tools_explain_unbound_use(call):
+def test_agent_operations_require_binding(call):
     with pytest.raises(server.MessagingError, match="requires a bound BeeLoop agent"):
         call()
 
@@ -523,36 +556,39 @@ def test_route_source_rejects_ephemeral_unknown_and_other_owned_sources():
     receiver = orchestrator(instance="primary")
     bind(ephemeral)
     rules(ephemeral, ids=[receiver.agent_id])
-    with pytest.raises(server.MessagingError, match="persistent instance"):
+    with pytest.raises(server.MessagingError, match="no route owned"):
         server.route_source("slack:ephemeral", receiver.agent_id)
 
     sender, receiver, route = routed_pair("slack:unknown")
     rules(sender, ids=[receiver.agent_id])
     route.remove()
-    with pytest.raises(server.MessagingError, match="has no route"):
+    with pytest.raises(server.MessagingError, match="no route owned"):
         server.route_source(route.source, receiver.agent_id)
 
     other = orchestrator(instance="other")
     route.new(other.agent_id)
-    with pytest.raises(server.MessagingError, match="another agent"):
+    with pytest.raises(server.MessagingError, match="no route owned"):
         server.route_source(route.source, receiver.agent_id)
 
 
-def test_route_source_requires_an_allowed_compatible_existing_receiver():
+def test_route_source_requires_an_allowed_existing_receiver():
     sender, receiver, route = routed_pair()
     rules(sender)
     with pytest.raises(server.MessagingError, match="may not route"):
         server.route_source(route.source, receiver.agent_id)
 
     rules(sender, ids=["*"])
-    incompatible = [
+    receivers = [
         orchestrator(cwd="workspaces/elsewhere", instance="primary"),
         ag.create("worker", cwd=sender.record["cwd"], instance="primary"),
         orchestrator(instance="backend", backend="codex"),
     ]
-    for receiver in incompatible:
-        with pytest.raises(server.MessagingError, match="role, cwd, and backend"):
-            server.route_source(route.source, receiver.agent_id)
+    for receiver in receivers:
+        route.new(sender.agent_id)
+        server.route_source(route.source, receiver.agent_id)
+        assert route.resolve() == receiver.agent_id
+
+    route.new(sender.agent_id)
 
     with pytest.raises(ag.UnknownAgent):
         server.route_source(
@@ -582,7 +618,7 @@ def test_concurrent_route_transfers_have_one_winner():
         thread.join(10)
 
     assert results.count("routed") == 1
-    assert results.count(f"source {route.source!r} is routed to another agent") == 7
+    assert sum("no route owned" in result or "routed to another agent" in result for result in results) == 7
     assert len(records.runtime().joinpath("routes.jsonl").read_text().splitlines()) == 2
 
 
@@ -733,60 +769,6 @@ def test_named_message_routes_reuse_and_remain_distinct(beeloop_root, monkeypatc
     assert recipient_ids[0] == recipient_ids[2]
     assert recipient_ids[1] == recipient_ids[3]
     assert recipient_ids[0] != recipient_ids[1]
-
-
-def test_unbound_messages_support_exact_ids_and_routes(beeloop_root, monkeypatch):
-    make_role(
-        beeloop_root,
-        "target",
-        'backend = "fake"\ncwd = "workspaces/target"\n',
-    )
-    existing = ag.create("target")
-    submitted = []
-    monkeypatch.setattr(messaging, "_submit", submitted.append)
-
-    assert server.message(existing.agent_id, "exact") == accepted(existing)
-    fresh = server.message({"role": "target"}, "fresh")
-    assert fresh["receiver_agent_id"] == submitted[-1].agent_id
-    for instance in ("one", "two", "one"):
-        result = server.message(
-            {"role": "target", "instance": instance}, f"route {instance}"
-        )
-        assert result["receiver_agent_id"] == submitted[-1].agent_id
-    routed = [envelope.agent_id for envelope in submitted[2:]]
-
-    assert all(envelope.source == "user:direct" for envelope in submitted)
-    assert "instance" not in records.read(fresh["receiver_agent_id"])
-    assert routed[0] == routed[2]
-    assert routed[0] != routed[1]
-
-
-def test_bound_secondary_can_reassign_a_direct_user_route(
-    beeloop_root, monkeypatch
-):
-    make_role(
-        beeloop_root,
-        "target",
-        'backend = "fake"\ncwd = "workspaces/target"\n',
-    )
-    monkeypatch.setattr(messaging, "_submit", lambda envelope: None)
-    receiver = {"role": "target", "instance": "secondary"}
-    candidate_id = server.message(receiver, "request")["receiver_agent_id"]
-    candidate = ag.restore(candidate_id)
-    primary = ag.create("target", instance="primary")
-    bind(candidate)
-    rules(candidate, ids=[primary.agent_id])
-
-    server.route_source("user:direct", primary.agent_id)
-
-    route = Route(
-        "user:direct",
-        str(candidate.cwd),
-        "target",
-        "fake",
-        "secondary",
-    )
-    assert route.resolve() == primary.agent_id
 
 
 def test_message_route_uses_the_shared_authorized_creator(beeloop_root, monkeypatch):

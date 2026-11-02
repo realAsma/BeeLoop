@@ -80,6 +80,7 @@ def _run_adapter(adapter: Path, root: Path, log_path: Path) -> bytes | None:
                 stdout=subprocess.PIPE,
                 stderr=log,
                 check=False,
+                env=_environment(),
             )
         except OSError as exc:
             log.write(f"{adapter.name}: {exc}\n".encode())
@@ -103,6 +104,7 @@ def _dispatch(envelope: bytes, root: Path, log_path: Path) -> None:
             stdout=log,
             stderr=subprocess.STDOUT,
             start_new_session=True,
+            env=_environment(),
         )
         assert process.stdin is not None
         try:
@@ -111,6 +113,15 @@ def _dispatch(envelope: bytes, root: Path, log_path: Path) -> None:
         except BaseException:
             process.kill()
             raise
+
+
+def _environment() -> dict[str, str]:
+    return {
+        **os.environ,
+        "BEELOOP_PYTHON": sys.executable,
+        "PATH": str(Path(sys.executable).parent)
+        + os.pathsep + os.environ.get("PATH", ""),
+    }
 
 
 def _log(path: Path, message: str) -> None:

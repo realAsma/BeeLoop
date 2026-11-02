@@ -202,7 +202,7 @@ class Agent:
             if self.backend.classify(str(exc)) != "terminal":
                 raise
             self.on_terminal(exc)
-            return self._turn(batch)
+            raise
         self._record_delivery(delivery, move_ttl=True)
         return delivery
 
@@ -240,18 +240,7 @@ class Agent:
             try:
                 self.backend.close(old_session)
             finally:
-                def sleep(record: dict[str, Any]) -> None:
-                    record.update(
-                        {
-                            "status": DORMANT,
-                            "session_id": None,
-                            "session_since": None,
-                            "session_last_turn": None,
-                        }
-                    )
-                    session_ttl.remove(record)
-
-                self.record = records.modify(self.agent_id, self.SCHEMA, sleep)
+                self._detach_session()
         outcome = "saved" if saved else "failed"
         return Delivery(text=f"session TTL expired; handoff {outcome}")
 
@@ -292,17 +281,32 @@ class Agent:
             if handoff
             else list(inputs)
         )
-        delivery = self._turn(batch)
+        try:
+            delivery = self._turn(batch)
+        except BackendError:
+            self._detach_session()
+            raise
         if handoff:
             session_ttl.clear_handoff(self.agent_id)
         return delivery
+
+    def _detach_session(self) -> None:
+        def detach(record: dict[str, Any]) -> None:
+            record.update({
+                "status": DORMANT,
+                "session_id": None,
+                "session_since": None,
+                "session_last_turn": None,
+            })
+            session_ttl.remove(record)
+
+        self.record = records.modify(self.agent_id, self.SCHEMA, detach)
 
     def on_terminal(self, exc: BackendError) -> None:
         """Close an agent whose backend session cannot be resumed."""
         self.record = self._update({"status": CLOSED})
         raise NotResumable(
-            f"agent {self.agent_id} lost its session and has no task to be "
-            f"briefed from, so it is closed: {exc}"
+            f"agent {self.agent_id} lost its session, so it is closed: {exc}"
         ) from exc
 
     def session(self) -> Session:

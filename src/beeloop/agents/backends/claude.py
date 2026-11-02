@@ -1,11 +1,7 @@
-"""The Claude Code adapter: a subprocess wrapper around one durable field.
+"""Claude Code adapter: a new process per batch, with resumable conversation on disk.
 
-No daemon, no socket, no protocol. The process exits after every batch while the
-conversation stays resumable on disk, so the whole backend is the session id.
-Nothing else is stored -- a PID, an output file or a transcript path would all
-go stale between ticks.
-
-This is the only file in the tree that may contain a CLI flag.
+Only the session ID persists; PIDs, output files, and transcript paths would go
+stale between turns. Claude CLI flags belong here.
 """
 
 from __future__ import annotations
@@ -16,7 +12,6 @@ import shutil
 import subprocess
 import uuid
 from typing import Sequence
-from xml.sax.saxutils import quoteattr
 
 from .base import (
     Backend,
@@ -25,15 +20,14 @@ from .base import (
     Fault,
     InputItem,
     Session,
+    render_inputs as _render,
 )
 
 # Verified against 2.1.251: an unknown session id exits 1 with exactly this.
 _NO_SESSION = "No conversation found with session ID"
 
-# A named profile compiles to the CLI's fixed enum. There is no profile-name
-# indirection in the tool itself, so the catalog is adapter data -- and until it
-# has been demonstrated end to end, the ceiling it describes is CLAIMED, not
-# enforced.
+# Profiles map directly to CLI enums; permission ceilings remain claimed until
+# demonstrated end to end.
 _PROFILES = {
     "approve_for_me": "auto",
     "yolo": "bypassPermissions",
@@ -48,8 +42,10 @@ class ClaudeBackend(Backend):
     delivery_mode = "serial"
 
     def open(self) -> str:
-        """Mint the id the first invocation will use. Spawns nothing, spends
-        nothing, contacts nothing -- so losing a race to allocate costs zero."""
+        """Reserve a UUID without process, network, or model work.
+
+        Allocation races cost nothing.
+        """
         return str(uuid.uuid4())
 
     def deliver(self, session: Session, inputs: Sequence[InputItem]) -> Delivery:
@@ -59,12 +55,9 @@ class ClaudeBackend(Backend):
             cwd=str(session.cwd),
             capture_output=True,
             text=True,
-            # The binding, and the only thing this backend tells the plugin.
-            # Verified against 2.1.257: the CLI passes its own environment down
-            # to stdio MCP servers, so the loop server reads this binding.
-            # Out-of-band on purpose -- an
-            # argument or a prompt line would let the model inside choose whose
-            # identity it sends under.
+            # Verified against 2.1.257: stdio MCP servers inherit this environment.
+            # Bind out of band so the model cannot choose its sender identity
+            # through an argument or prompt line.
             env={**os.environ, "BEELOOP_AGENT_DIR": str(session.agent_dir)},
         )
         if done.returncode != 0:
@@ -77,19 +70,15 @@ class ClaudeBackend(Backend):
         )
 
     def close(self, session: Session) -> None:
-        """Idempotent by being nothing.
+        """The provider has no retire operation; record status stops resumes.
 
-        The provider has no retire operation. The record's status is what stops
-        resumes, and leaving the transcript on disk IS the archival behaviour the
-        contract asks for.
+        Leaving its transcript on disk satisfies the archival contract.
         """
 
     def classify(self, message: str) -> Fault:
-        """Unknown text means `transient` deliberately.
+        """Unknown failures are transient to avoid discarding live conversations.
 
-        An unrecognized failure is far more likely to be a blip than a dead
-        session, and calling it `terminal` throws away a live conversation. The
-        retry budget belongs to the caller, not here.
+        The caller owns the retry budget.
         """
         if _NO_SESSION in message:
             return "terminal"
@@ -100,22 +89,16 @@ class ClaudeBackend(Backend):
 
 
 def _argv(session: Session, prompt: str) -> list[str]:
-    """The command line, rebuilt in full on every batch.
+    """Rebuild command options every batch.
 
-    There is deliberately no "the first call carries the config" branch. Verified
-    against 2.1.251: a secret placed in --append-system-prompt at create is
-    unknown after a --resume that omits the flag, so anything passed on the
-    command line has to be passed again, forever.
+    Verified against 2.1.251: --append-system-prompt values disappear on --resume
+    when that flag is omitted, so command options must be replayed.
 
-    What survives is DISCOVERY. The process is new every batch and reads
-    CLAUDE.md, skills and MCP config out of `cwd` and the installed plugins each
-    time -- verified the same way, with a codeword that was only ever in a
-    discovered CLAUDE.md. So this passes none of that: no `--plugin-dir` and no
-    `--mcp-config`, because the loop plugin is installed rather than handed over
-    per invocation, and `cwd` is the subprocess's, never a flag. What is left is
-    the session, the profile and the model -- the three things the directory
-    cannot know. The per-agent binding the plugin needs travels in the
-    environment `deliver` builds, not here.
+    Fresh processes rediscover CLAUDE.md, skills, and MCP configuration from cwd
+    and installed plugins (verified with a codeword only in discovered CLAUDE.md).
+    Thus no --plugin-dir or --mcp-config flags are needed; cwd is the subprocess
+    directory, not a flag. Only session, profile, and model require flags; agent
+    identity travels in deliver's environment.
     """
     mode = _PROFILES.get(session.permissions)
     if mode is None:
@@ -134,8 +117,7 @@ def _argv(session: Session, prompt: str) -> list[str]:
         "--permission-mode",
         mode,
     ]
-    # From the record, never by probing the provider: create and resume are not
-    # interchangeable, and reusing a live id forks the conversation silently.
+    # Reusing a live ID via --session-id silently forks its conversation.
     argv += (
         ["--session-id", session.session_id]
         if session.prepared
@@ -153,25 +135,3 @@ def _binary() -> str:
             "the `claude` CLI is not on PATH; install it or set BEELOOP_CLAUDE_BIN"
         )
     return found
-
-
-def _render(inputs: Sequence[InputItem]) -> str:
-    """One prompt, N items, each keeping its source and its boundary.
-
-    A batch is several things that happened, not one long message. Collapsing
-    them would lose which source caused what, and `source` is the only address an
-    agent has for a reply.
-    """
-    if not inputs:
-        raise BackendError("nothing to deliver; an empty batch is a caller bug")
-
-    framed = "\n".join(
-        f"<input source={quoteattr(item.source)}>\n{item.content}\n</input>"
-        for item in inputs
-    )
-    if len(inputs) == 1:
-        return framed
-    return (
-        f"{len(inputs)} inputs arrived, in the order they were received.\n\n"
-        f"{framed}"
-    )

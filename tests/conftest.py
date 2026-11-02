@@ -54,6 +54,7 @@ def beeloop_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("HOME", str(user_home))
     shutil.copytree(SOURCE / "configs", home / "configs")
     shutil.copytree(SOURCE / "orchestrator", home / "orchestrator")
+    shutil.copytree(SOURCE / "router", home / "router")
     # Made here rather than checked in: git cannot track an empty directory,
     # and empty is the whole point -- `worker` is the role that says nothing.
     (home / "configs" / "roles" / "worker").mkdir(exist_ok=True)

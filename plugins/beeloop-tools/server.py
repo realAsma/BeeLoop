@@ -1,7 +1,6 @@
 """MCP tools for asynchronous BeeLoop messaging.
 
-When present, `BEELOOP_AGENT_DIR` binds calls to a harness-managed agent.
-Without it, creation and messaging are trusted direct-user operations.
+`BEELOOP_AGENT_DIR` binds operations to a harness-managed agent.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ MessagingError = messaging.MessagingError
 AGENT_DIRECTORY: Path | None = None
 mcp = MCPServer(
     "beeloop-tools",
-    instructions="Messaging for BeeLoop agents and trusted direct-user sessions.",
+    instructions="Messaging for harness-bound BeeLoop agents.",
 )
 
 
@@ -61,7 +60,7 @@ def get_beeloop_root() -> str:
 @_tool
 def create_agent(role: str, cwd: str | None = None) -> dict[str, str]:
     """Create an authorized agent without starting its first model turn."""
-    return messaging.create_agent(AGENT_DIRECTORY, role, cwd)
+    return messaging.create_agent(_agent_directory(), role, cwd)
 
 
 @_tool
@@ -74,13 +73,19 @@ def message(receiver: str | dict[str, Any], msg: str) -> dict[str, str]:
     An accepted result identifies the resolved receiver and confirms background
     dispatch, not model completion.
     """
-    return messaging.send(AGENT_DIRECTORY, receiver, msg)
+    return messaging.send(_agent_directory(), receiver, msg)
 
 
 @_tool
 def route_source(source: str, receiver_agent_id: str) -> dict[str, str]:
     """Route one persistent input source owned by this agent to an existing agent."""
     return messaging.route_source(_agent_directory(), source, receiver_agent_id)
+
+
+@_tool
+def list_agents() -> list[dict[str, Any]]:
+    """List permitted BeeLoop agents for routing and conversation discovery."""
+    return messaging.list_agents(_agent_directory())
 
 
 @_tool

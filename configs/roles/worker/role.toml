@@ -1,3 +1,6 @@
 #CHANGEME: set to "codex" or "claude_code".
 backend = "claude_code"
 permissions = "approve_for_me"
+
+[allowed_receivers]
+roles = ["orchestrator"]

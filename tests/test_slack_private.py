@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import io
+import json
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,6 +36,34 @@ from slack_private.input import format_envelope  # noqa: E402
 from slack_private.listener import SlackIdentity, validate_events_api_payload  # noqa: E402
 
 IDENTITY = SlackIdentity(team_id="T123", bot_user_id="UBOT")
+
+
+def test_helper_keeps_beeloop_interpreter_after_shell_path_reset(tmp_path):
+    pytest.importorskip("slack_sdk")
+    helper = tmp_path / "source" / "slack-private"
+    helper.parent.mkdir()
+    shutil.copy2(SOURCE_ROOT / "slack-private", helper)
+    package = helper.parent / "slack_private"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "cli.py").write_text(
+        "import sys\nimport beeloop\nimport slack_sdk\nprint(sys.executable)\n"
+    )
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    python = binaries / "python3"
+    python.write_text("#!/bin/sh\nexit 99\n")
+    python.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{binaries}:/usr/bin:/bin",
+        "BEELOOP_PYTHON": sys.executable,
+    }
+
+    result = subprocess.run([str(helper)], env=env, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == sys.executable
 
 
 def event_payload(**overrides):
@@ -106,18 +139,72 @@ def test_file_share_keeps_metadata_but_not_download_url():
     assert record["files"] == [{"id": "F123", "name": "diagram.png", "mimetype": "image/png", "size": 42}]
 
 
-def test_envelope_uses_source_route_without_raw_message():
+def test_envelope_keeps_legacy_source_reference_without_snapshot():
     record = {
         "source": "slack-private:D123:1712345678901234",
         "permalink": "https://workspace.slack.com/archives/D123/p1712345678901234",
     }
     parsed = parse_envelope(format_envelope(record))
 
-    assert parsed.role == "orchestrator"
+    assert parsed.role == "router"
     assert parsed.instance == "default"
     assert parsed.source == record["source"]
     assert "run this" not in parsed.msg
     assert record["permalink"] in parsed.msg
+
+
+def test_authenticated_intake_preserves_text_links_and_rich_content(tmp_path):
+    text = "Read <https://example.com/article|this article>\nsource=not-a-header"
+    blocks = [{"type": "rich_text", "elements": [{"type": "text", "text": "Details"}]}]
+    attachments = [{"title": "Article preview", "title_link": "https://example.com/article"}]
+    record = validate_events_api_payload(
+        event_payload(text=text, blocks=blocks, attachments=attachments), "UOWNER", IDENTITY
+    )
+    record["permalink"] = "https://workspace.slack.com/archives/D123/p1712345678901234"
+    assert enqueue_authenticated_record(tmp_path, record)
+
+    parsed = parse_envelope(format_envelope(pop_authenticated_record(tmp_path)))
+    content = json.loads(parsed.msg.split("Slack content (JSON): ", 1)[1].splitlines()[0])
+
+    assert parsed.source == record["source"]
+    assert parsed.role == "router"
+    assert record["permalink"] in parsed.msg
+    assert content == {"text": text, "blocks": blocks, "attachments": attachments, "files": []}
+
+
+@pytest.mark.parametrize("mimetype,name", [("image/png", "diagram.png"), ("application/pdf", "report.pdf")])
+def test_file_only_intake_includes_usable_metadata_without_private_urls(mimetype, name):
+    record = validate_events_api_payload(
+        event_payload(text="", subtype="file_share", files=[{
+            "id": "F123", "name": name, "mimetype": mimetype, "size": 42,
+            "url_private_download": "https://files.slack.com/private",
+        }]),
+        "UOWNER", IDENTITY,
+    )
+    assert record is not None
+    record["permalink"] = "https://workspace.slack.com/archives/D123/p1712345678901234"
+
+    parsed = parse_envelope(format_envelope(record))
+    content = json.loads(parsed.msg.split("Slack content (JSON): ", 1)[1].splitlines()[0])
+
+    assert content["files"] == [{"id": "F123", "name": name, "mimetype": mimetype, "size": 42}]
+    assert "url_private" not in parsed.msg
+
+
+@pytest.mark.parametrize("field", ["blocks", "attachments"])
+def test_rich_content_only_intake_is_not_dropped(field):
+    body = [{"text": "Rich-only content", "url": "https://example.com"}]
+    record = validate_events_api_payload(event_payload(text="", **{field: body}), "UOWNER", IDENTITY)
+    assert record is not None
+    assert record[field] == body
+
+
+def test_rich_content_and_files_do_not_bypass_owner_authentication():
+    payload = event_payload(
+        user="UOTHER", text="", blocks=[{"text": "Untrusted content"}],
+        files=[{"id": "F123", "mimetype": "image/png"}],
+    )
+    assert validate_events_api_payload(payload, "UOWNER", IDENTITY) is None
 
 
 def test_queue_deduplicates_and_authenticates_source(tmp_path: Path):
@@ -247,6 +334,27 @@ def test_download_does_not_send_token_to_non_slack_url(tmp_path: Path):
     )
 
     assert downloaded == [{"id": "F123", "skipped": "invalid_private_download_url"}]
+
+
+def test_download_returns_absolute_paths_and_mime_types_for_native_tools(tmp_path, monkeypatch):
+    class FakeClient:
+        def files_info(self, file):
+            return {"file": {
+                "id": file, "name": "image.png", "mimetype": "image/png",
+                "url_private_download": "https://files.slack.com/private",
+            }}
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(slack_cli.urllib.request, "urlopen", lambda request: io.BytesIO(b"image-bytes"))
+
+    downloaded = slack_cli._download_files(
+        FakeClient(), "xoxb-test", [{"files": [{"id": "F123"}]}], Path("downloads")
+    )
+
+    assert downloaded[0]["mimetype"] == "image/png"
+    path = Path(downloaded[0]["path"])
+    assert path.is_absolute()
+    assert path.read_bytes() == b"image-bytes"
 
 
 def test_thread_fetch_pages_until_target_message():

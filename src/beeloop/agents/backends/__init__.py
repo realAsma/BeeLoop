@@ -1,8 +1,4 @@
-"""Name to adapter, resolved lazily.
-
-Lazily because a caller that only reads records -- a sweep, a status listing --
-should never drag a subprocess adapter into its process just by importing this.
-"""
+"""Resolve adapters lazily so record and status readers need not import them."""
 
 from __future__ import annotations
 
@@ -24,10 +20,7 @@ _BACKENDS = {
     "fake": ".fake:FakeBackend",
 }
 
-# The backend a role gets when it does not name one. It lives here rather than
-# beside the roles because naming an adapter is this module's whole job, and
-# every other module should be able to be grepped for a provider name and come
-# up empty.
+# The registry owns the default role backend, keeping provider names out of callers.
 DEFAULT = "claude_code"
 
 
