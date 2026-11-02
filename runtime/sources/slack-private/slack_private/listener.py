@@ -136,6 +136,8 @@ def run_listener(root: Path) -> int:
         record["permalink"] = permalink
         if enqueue_authenticated_record(root, record):
             _log(f"queued authenticated Slack DM event {record['event_id']}")
+            if record["ts"] != record["thread_ts"]:
+                return
             try:
                 receipt_client.reactions_add(
                     channel=record["channel"], timestamp=record["ts"], name="blob-bee",

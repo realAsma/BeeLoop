@@ -368,7 +368,7 @@ def test_sanitize_filename():
 
 
 @pytest.mark.parametrize("reaction_error", [None, "already_reacted", "missing_scope", "invalid_name", "timeout"])
-def test_listener_marks_only_new_accepted_messages_after_queueing(
+def test_listener_marks_only_new_thread_roots_after_queueing(
     reaction_error, monkeypatch, tmp_path, capsys,
 ):
     sdk = pytest.importorskip("slack_sdk")
@@ -378,9 +378,11 @@ def test_listener_marks_only_new_accepted_messages_after_queueing(
     root["event_id"] = "EvRoot"
     followup = event_payload(ts="1712345680.000001", thread_ts="1712345678.901234")
     followup["event_id"] = "EvFollowup"
+    another_root = event_payload(ts="1712345681.000001")
+    another_root["event_id"] = "EvNextRoot"
     rejected = event_payload(user="UOTHER")
     rejected["event_id"] = "EvOther"
-    requests = [root, root, followup, followup, rejected]
+    requests = [root, root, followup, followup, another_root, rejected]
     order = []
     reactions = []
     constructors = []
@@ -436,11 +438,13 @@ def test_listener_marks_only_new_accepted_messages_after_queueing(
 
     assert reactions == [
         {"channel": "D123", "timestamp": "1712345678.901234", "name": "blob-bee"},
-        {"channel": "D123", "timestamp": "1712345680.000001", "name": "blob-bee"},
+        {"channel": "D123", "timestamp": "1712345681.000001", "name": "blob-bee"},
     ]
     assert len(order) == len(requests)
     assert constructors[-1] == {"token": "xoxb-test", "timeout": 2, "retry_handlers": []}
-    assert [pop_authenticated_record(tmp_path)["event_id"] for _ in range(2)] == ["EvRoot", "EvFollowup"]
+    assert [pop_authenticated_record(tmp_path)["event_id"] for _ in range(3)] == [
+        "EvRoot", "EvFollowup", "EvNextRoot",
+    ]
     assert pop_authenticated_record(tmp_path) is None
     logs = capsys.readouterr().err
     assert "secret" not in logs

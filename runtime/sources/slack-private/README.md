@@ -6,8 +6,8 @@ file/image metadata, including file-only and image-only messages. Ordinary
 messages need no extra fetch; the helper retrieves fuller thread context and
 file bytes as needed, returning absolute paths for native document and image
 tools. Initial metadata does not inline images. BeeBot adds a best-effort
-`:blob-bee:` reaction to accepted messages as a receipt marker, not a completion
-signal.
+`:blob-bee:` reaction to accepted messages that start a thread, not follow-ups.
+It marks receipt, not completion.
 
 `reply` and `upload` answer threads authenticated by this input. Only `dm-thread`
 sends without an inbound event: it opens an owner DM thread for owner-configured
