@@ -5,7 +5,9 @@ events. Authenticated intake includes text, links, rich blocks, attachments, and
 file/image metadata, including file-only and image-only messages. Ordinary
 messages need no extra fetch; the helper retrieves fuller thread context and
 file bytes as needed, returning absolute paths for native document and image
-tools. Initial metadata does not inline images.
+tools. Initial metadata does not inline images. BeeBot adds a best-effort
+`:blob-bee:` reaction to accepted messages that start a thread, not follow-ups.
+It marks receipt, not completion.
 
 `reply` and `upload` answer threads authenticated by this input. Only `dm-thread`
 sends without an inbound event: it opens an owner DM thread for owner-configured
@@ -13,8 +15,8 @@ scheduled work (such as `research-digest`), always targeting `SLACK_ALLOWED_USER
 
 ## Setup
 
-1. Use the Python environment where BeeLoop is installed, and add its Slack
-   dependency:
+1. Install BeeLoop and its Slack dependency in the Python environment that
+   runs your BeeLoop and BeeLoop State MCP servers:
 
 ```sh
 python3 -m pip install -e '.[slack]'
@@ -25,11 +27,11 @@ python3 -m pip install -e '.[slack]'
 
    - Enable [Socket Mode](https://docs.slack.dev/apis/events-api/using-socket-mode/)
      and create an app-level token with the `connections:write` scope.
-   - Add the `im:history`, `chat:write`, `im:write`, `files:read`, and
-     `files:write` bot token scopes.
+   - Add the `im:history`, `chat:write`, `im:write`, `files:read`, `files:write`,
+     and `reactions:write` bot token scopes.
    - Subscribe to the `message.im` bot event.
    - Enable the Messages Tab under App Home.
-   - Install the app into the workspace.
+   - Install the app into the workspace; reinstall after changing scopes.
 
 3. Create `runtime/sources/slack-private/secrets.env`:
 

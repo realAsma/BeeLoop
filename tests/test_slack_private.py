@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import os
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +16,7 @@ sys.path.insert(0, str(SOURCE_ROOT))
 
 from slack_private import cli as slack_cli  # noqa: E402
 from slack_private import input as slack_input  # noqa: E402
+from slack_private import listener as slack_listener  # noqa: E402
 from slack_private.common import (  # noqa: E402
     SlackConfig,
     enqueue_authenticated_record,
@@ -36,34 +34,6 @@ from slack_private.input import format_envelope  # noqa: E402
 from slack_private.listener import SlackIdentity, validate_events_api_payload  # noqa: E402
 
 IDENTITY = SlackIdentity(team_id="T123", bot_user_id="UBOT")
-
-
-def test_helper_keeps_beeloop_interpreter_after_shell_path_reset(tmp_path):
-    pytest.importorskip("slack_sdk")
-    helper = tmp_path / "source" / "slack-private"
-    helper.parent.mkdir()
-    shutil.copy2(SOURCE_ROOT / "slack-private", helper)
-    package = helper.parent / "slack_private"
-    package.mkdir()
-    (package / "__init__.py").write_text("")
-    (package / "cli.py").write_text(
-        "import sys\nimport beeloop\nimport slack_sdk\nprint(sys.executable)\n"
-    )
-    binaries = tmp_path / "bin"
-    binaries.mkdir()
-    python = binaries / "python3"
-    python.write_text("#!/bin/sh\nexit 99\n")
-    python.chmod(0o755)
-    env = {
-        **os.environ,
-        "PATH": f"{binaries}:/usr/bin:/bin",
-        "BEELOOP_PYTHON": sys.executable,
-    }
-
-    result = subprocess.run([str(helper)], env=env, capture_output=True, text=True)
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == sys.executable
 
 
 def event_payload(**overrides):
@@ -395,3 +365,91 @@ def test_listener_supervisor_starts_only_one_live_process(monkeypatch, tmp_path:
 
 def test_sanitize_filename():
     assert sanitize_filename("../../bad name?.png") == "bad_name_.png"
+
+
+@pytest.mark.parametrize("reaction_error", [None, "already_reacted", "missing_scope", "invalid_name", "timeout"])
+def test_listener_marks_only_new_thread_roots_after_queueing(
+    reaction_error, monkeypatch, tmp_path, capsys,
+):
+    sdk = pytest.importorskip("slack_sdk")
+    errors = pytest.importorskip("slack_sdk.errors")
+    socket_mode = pytest.importorskip("slack_sdk.socket_mode")
+    root = event_payload()
+    root["event_id"] = "EvRoot"
+    followup = event_payload(ts="1712345680.000001", thread_ts="1712345678.901234")
+    followup["event_id"] = "EvFollowup"
+    another_root = event_payload(ts="1712345681.000001")
+    another_root["event_id"] = "EvNextRoot"
+    rejected = event_payload(user="UOTHER")
+    rejected["event_id"] = "EvOther"
+    requests = [root, root, followup, followup, another_root, rejected]
+    order = []
+    reactions = []
+    constructors = []
+    current = []
+
+    class FakeWebClient:
+        def __init__(self, **kwargs):
+            constructors.append(kwargs)
+
+        def auth_test(self):
+            return {"team_id": "T123", "user_id": "UBOT"}
+
+        def chat_getPermalink(self, **kwargs):
+            return {"permalink": "https://workspace.slack.com/archives/D123/p1712345678901234"}
+
+        def reactions_add(self, **kwargs):
+            assert order[-1] == ("ack", current[0])
+            queued = json.loads((tmp_path / "runtime/sources/slack-private/state/state.json").read_text())
+            assert any(row["event_id"] == current[0] for row in queued["queue"])
+            reactions.append(kwargs)
+            if reaction_error == "timeout":
+                raise TimeoutError("secret exception details must not be logged")
+            if reaction_error:
+                raise errors.SlackApiError("secret response details", {"error": reaction_error})
+            return {"ok": True}
+
+    class FakeSocketClient:
+        def __init__(self, **kwargs):
+            self.socket_mode_request_listeners = []
+
+        def send_socket_mode_response(self, response):
+            order.append(("ack", response.envelope_id))
+
+        def connect(self):
+            for payload in requests:
+                current[:] = [payload["event_id"]]
+                request = SimpleNamespace(type="events_api", payload=payload, envelope_id=payload["event_id"])
+                for callback in self.socket_mode_request_listeners:
+                    callback(self, request)
+
+        def disconnect(self):
+            pass
+
+    def stop():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(sdk, "WebClient", FakeWebClient)
+    monkeypatch.setattr(socket_mode, "SocketModeClient", FakeSocketClient)
+    monkeypatch.setattr(slack_listener, "load_slack_config", lambda root: SlackConfig("xapp-test", "xoxb-test", "UOWNER"))
+    monkeypatch.setattr(slack_listener.threading, "Event", lambda: SimpleNamespace(wait=stop))
+
+    assert slack_listener.run_listener(tmp_path) == 0
+
+    assert reactions == [
+        {"channel": "D123", "timestamp": "1712345678.901234", "name": "blob-bee"},
+        {"channel": "D123", "timestamp": "1712345681.000001", "name": "blob-bee"},
+    ]
+    assert len(order) == len(requests)
+    assert constructors[-1] == {"token": "xoxb-test", "timeout": 2, "retry_handlers": []}
+    assert [pop_authenticated_record(tmp_path)["event_id"] for _ in range(3)] == [
+        "EvRoot", "EvFollowup", "EvNextRoot",
+    ]
+    assert pop_authenticated_record(tmp_path) is None
+    logs = capsys.readouterr().err
+    assert "secret" not in logs
+    if reaction_error not in (None, "already_reacted"):
+        assert "reactions.add failed" in logs
+        assert ("TimeoutError" if reaction_error == "timeout" else reaction_error) in logs
+    else:
+        assert "reactions.add failed" not in logs

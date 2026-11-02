@@ -5,30 +5,42 @@ description: Fetch and reply to authenticated owner DMs delivered through the sl
 
 # Handle private Slack input
 
-The complete `slack-private:` source is the authenticated reply handle. Use the
-runtime helper for every operation; do not send responses through a generic
-Slack connector or the owner's Slack identity.
+The complete `slack-private:` source is the authenticated reply handle. Use
+this source's helper, not a generic Slack connector or the owner's identity.
+Orchestrators invoke it through `run_script`; check the returned `exit_code`.
 
-For an inbound event:
+## Reply
 
-1. Copy the complete input source and the Slack permalink from the message.
-   Run `beeloop root` to locate the runtime helper.
-2. Use the included message text, rich content, and file metadata directly.
-   If you need earlier discussion, content absent from an older intake, or
-   attachment bytes, fetch authenticated context with
-   `<root>/runtime/sources/slack-private/slack-private
-   fetch --source <source> --permalink <url>`. Add `--download-files` only when
-   the task needs attached files. Downloads return absolute local paths and
-   MIME types. Read documents or inspect images with your native file tools;
-   file metadata in the initial intake does not itself provide image pixels.
-3. Reply with `<root>/runtime/sources/slack-private/slack-private reply
-   --source <source> --text -`. Use `upload --source <source> --file <path>` for
-   files.
+```text
+run_script(script="sources/slack-private/slack-private",
+           args=["reply", "--source", "<complete source>", "--text", "-"],
+           stdin="<reply>")
+```
+
+## Context and files
+
+Use the included text, rich content, and file metadata directly. Fetch only
+when earlier discussion or attachment bytes are needed:
+
+```text
+run_script(script="sources/slack-private/slack-private",
+           args=["fetch", "--source", "<complete source>", "--permalink", "<url>"])
+```
+
+Add `--download-files` when needed. Downloads return absolute paths and MIME
+types for native document and image tools; intake metadata is not image pixels.
+
+```text
+run_script(script="sources/slack-private/slack-private",
+           args=["upload", "--source", "<complete source>", "--file", "<absolute path>"])
+```
+
+Workers can use the same helper from their shell after locating the deployment
+with `beeloop root`.
 
 A scheduled job that the owner configured, with no inbound event to reply to,
-opens its own thread instead: `dm-thread --header <short line> --text -`. It
-goes only to the configured owner's DM. Do not use it to start a conversation
-the owner did not ask for.
+uses `dm-thread --header <short line> --text -` instead. It opens a thread only
+in the configured owner's DM. Do not start conversations the owner did not ask for.
 
 Put the result first and keep replies comfortable to read in Slack. Prefer
 short paragraphs, `*bold*` emphasis, `•` bullets, and `<url|label>` links.

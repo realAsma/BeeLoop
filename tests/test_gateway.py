@@ -117,7 +117,6 @@ def test_dispatch_uses_the_current_python(beeloop_root: Path, monkeypatch):
     assert calls[0][1]["cwd"] == beeloop_root
     assert calls[0][1]["start_new_session"] is True
     assert calls[0][1]["env"]["PATH"].split(os.pathsep)[0] == str(Path(sys.executable).parent)
-    assert calls[0][1]["env"]["BEELOOP_PYTHON"] == sys.executable
 
 
 @pytest.mark.parametrize("value", ["nope", "0", "-1", "nan", "inf"])

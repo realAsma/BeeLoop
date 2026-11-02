@@ -6,6 +6,8 @@ import asyncio
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -17,6 +19,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 import beeloop.dispatch.dispatch as dsp
+from beeloop import scripts
 from beeloop import agents as ag
 from beeloop.agents import records
 from beeloop.agents.backends import fake
@@ -132,6 +135,7 @@ def test_server_introspection_with_and_without_agent_binding(bound, beeloop_root
     assert [tool.name for tool in listed.tools] == [
         "get_agent_id",
         "get_beeloop_root",
+        "run_script",
         "create_agent",
         "message",
         "route_source",
@@ -144,11 +148,14 @@ def test_server_introspection_with_and_without_agent_binding(bound, beeloop_root
     assert root_tool.input_schema["properties"] == {}
     assert "required" not in root_tool.input_schema
     assert resolved_root.content[0].text == str(beeloop_root.resolve())
-    create = listed.tools[2]
+    create = next(tool for tool in listed.tools if tool.name == "create_agent")
     assert set(create.input_schema["properties"]) == {"role", "cwd"}
     assert set(create.input_schema["required"]) == {"role"}
     assert "without starting" in create.description
     by_name = {tool.name: tool for tool in listed.tools}
+    runner = by_name["run_script"].input_schema
+    assert set(runner["properties"]) == {"script", "args", "stdin"}
+    assert set(runner["required"]) == {"script"}
     tool = by_name["message"]
     message = tool.input_schema
     assert set(message["properties"]) == {"receiver", "msg"}
@@ -343,6 +350,7 @@ def test_identity_is_read_from_the_bound_record_on_every_call():
 @pytest.mark.parametrize(
     "call",
     [
+        lambda: server.run_script("scripts/test.py", []),
         lambda: server.create_agent("worker", "project"),
         lambda: server.message("agent", "work"),
         server.list_agents,
@@ -845,3 +853,184 @@ def test_busy_delivery_parks_then_drains_on_the_next_message():
     ]
     log = (records.root() / "logs" / "dispatch.log").read_text("utf-8")
     assert "parked" in log and "delivered" in log
+
+
+def test_cold_slack_reply_uses_mcp_python_before_source_transfer(beeloop_root, monkeypatch):
+    source = "slack-private:D123:1712345678901234"
+    router = as_fake(ag.create("router", instance="default"))
+    recipient = as_fake(orchestrator())
+    route = Route(source, str(router.cwd), "router", "fake", "default")
+    route.new(router.agent_id)
+    source_root = beeloop_root / "runtime" / "sources" / "slack-private"
+    shutil.copytree(SERVER_PATH.parents[2] / "runtime" / "sources" / "slack-private", source_root)
+    state = source_root / "state"
+    state.mkdir(exist_ok=True)
+    (state / "state.json").write_text(json.dumps({
+        "sessions": {source: {"channel": "D123", "thread_ts": "1712345678.901234"}},
+    }))
+    (source_root / "secrets.env").write_text(
+        "SLACK_APP_TOKEN=xapp-test\nSLACK_BOT_TOKEN=xoxb-test\nSLACK_ALLOWED_USER_ID=UOWNER\n"
+    )
+    sent = beeloop_root / "sent.json"
+    (source_root / "slack_sdk.py").write_text(
+        "import json\nfrom pathlib import Path\n"
+        "class WebClient:\n"
+        "    def __init__(self, token): assert token == 'xoxb-test'\n"
+        "    def chat_postMessage(self, **kwargs):\n"
+        f"        Path({str(sent)!r}).write_text(json.dumps(kwargs))\n"
+        "        return {'channel': kwargs['channel'], 'ts': '1712345680.000001'}\n"
+    )
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    text = "I’ll check this.\nLiteral shell text: $(exit 9) `exit 9`"
+
+    async def acknowledge():
+        async with live_session(recipient) as session:
+            ok = await session.call_tool("run_script", {
+                "script": "sources/slack-private/slack-private",
+                "args": ["reply", "--source", source, "--text", "-"], "stdin": text,
+            })
+            refused = await session.call_tool("run_script", {
+                "script": "sources/slack-private/slack-private",
+                "args": ["reply", "--source", "slack-private:D999:1712345678901234", "--text", "-"],
+                "stdin": "wrong destination",
+            })
+            return ok, refused
+
+    ok, refused = asyncio.run(acknowledge())
+    assert not ok.is_error
+    reply = json.loads(ok.content[0].text)
+    assert reply["exit_code"] == 0
+    assert json.loads(reply["stdout"])["ok"] is True
+    assert not refused.is_error
+    refused_result = json.loads(refused.content[0].text)
+    assert refused_result["exit_code"] == 1
+    assert "has not been authenticated" in refused_result["stderr"]
+    assert json.loads(sent.read_text()) == {
+        "channel": "D123", "thread_ts": "1712345678.901234", "text": text,
+    }
+    # The first reply does not race source transfer; later messages bypass the router.
+    assert route.resolve() == router.agent_id
+    bind(router)
+    server.route_source(source, recipient.agent_id)
+    dsp.dispatch(Envelope(role="router", agent_id=None, cwd=str(router.cwd), backend="fake",
+                          instance="default", source=source, msg="follow-up"))
+    assert fake.turns(recipient.agent_id)[-1][-1] == [source, "follow-up"]
+    assert fake.turns(router.agent_id) == []
+
+
+@pytest.mark.parametrize("script", [
+    "../outside.py", "/tmp/run.py", "python", "agents/record.py",
+    "scripts/../agents/script.py", "sources/../../outside.py",
+])
+def test_run_script_rejects_unapproved_paths(script, monkeypatch):
+    monkeypatch.setattr(scripts.subprocess, "run", lambda *a, **kw: pytest.fail("script ran"))
+    with pytest.raises(scripts.ScriptError, match="script must"):
+        scripts.run(script, [])
+
+
+def test_run_script_refuses_symlinks_outside_approved_directories(beeloop_root):
+    runtime = beeloop_root / "runtime"
+    directory = runtime / "scripts"
+    directory.mkdir()
+    (directory / "outside").symlink_to("/bin/sh")
+    (runtime / "other.py").write_text("pass")
+    (directory / "disguised.py").symlink_to(runtime / "other.py")
+    outside = beeloop_root / "outside"
+    outside.mkdir()
+    (outside / "script.py").write_text("pass")
+    (runtime / "sources").symlink_to(outside)
+    for script in ("scripts/outside", "scripts/disguised.py", "sources/script.py"):
+        with pytest.raises(scripts.ScriptError, match="script must"):
+            scripts.run(script, [])
+
+
+def test_run_script_timeout_does_not_retry(beeloop_root, monkeypatch):
+    directory = beeloop_root / "runtime" / "scripts"
+    directory.mkdir()
+    (directory / "test.py").touch()
+    calls = []
+    def timeout(*args, **kwargs):
+        calls.append(args)
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+    monkeypatch.setattr(scripts.subprocess, "run", timeout)
+    with pytest.raises(scripts.ScriptError, match="outcome is unknown"):
+        scripts.run("scripts/test.py", [])
+    assert len(calls) == 1
+
+
+def test_run_script_executes_python_without_chmod_and_keeps_literal_arguments(beeloop_root):
+    runtime = beeloop_root / "runtime"
+    directory = runtime / "scripts"
+    directory.mkdir()
+    script = directory / "test.py"
+    script.write_text(
+        "import json, os, sys\n"
+        "print(json.dumps({'argv': sys.argv[1:], 'stdin': sys.stdin.read(), "
+        "'cwd': os.getcwd(), 'prefix': sys.prefix}))\n"
+        "print('expected diagnostic', file=sys.stderr)\n"
+        "sys.exit(7)\n"
+    )
+    script.chmod(0o644)
+    args = ["hello world", "$(exit 9)", "`exit 9`", "--option=value"]
+    text = "First line\nLiteral $HOME and `command`"
+    agent = orchestrator()
+
+    async def invoke():
+        async with live_session(agent) as session:
+            result = await session.call_tool("run_script", {
+                "script": "scripts/test.py", "args": args, "stdin": text,
+            })
+            without_input = await session.call_tool("run_script", {"script": "scripts/test.py"})
+            return result, without_input
+
+    result, without_input = asyncio.run(invoke())
+    assert not result.is_error
+    output = json.loads(result.content[0].text)
+    assert output["exit_code"] == 7
+    assert output["stderr"] == "expected diagnostic\n"
+    assert json.loads(output["stdout"]) == {
+        "argv": args, "stdin": text, "cwd": str(beeloop_root), "prefix": sys.prefix,
+    }
+    assert not without_input.is_error
+    output = json.loads(without_input.content[0].text)
+    assert json.loads(output["stdout"])["stdin"] == ""
+    assert json.loads(output["stdout"])["argv"] == []
+
+
+@pytest.mark.parametrize("role", ["worker", "router", None])
+def test_run_script_rejects_non_orchestrator_callers(role, beeloop_root):
+    agent = ag.create(role, cwd="workspaces/test") if role else None
+    async def invoke():
+        async with live_session(agent) as session:
+            return await session.call_tool("run_script", {"script": "scripts/test.py", "args": []})
+    result = asyncio.run(invoke())
+    assert result.is_error
+    assert "bound" in result.content[0].text
+
+
+def test_run_script_reads_current_role_and_refuses_external_agent_bindings(beeloop_root):
+    agent = orchestrator()
+    bind(agent)
+    with pytest.raises(scripts.ScriptError, match="script must"):
+        server.run_script("../no.py", [])
+    records.update(agent.agent_id, agent.SCHEMA, {"role": "worker"})
+    with pytest.raises(server.MessagingError, match="bound orchestrator"):
+        server.run_script("scripts/test.py", [])
+    outside = beeloop_root / "outside-agent"
+    outside.mkdir()
+    (outside / "record.json").write_text(json.dumps({
+        "agent_id": agent.agent_id, "role": "orchestrator", "cwd": str(agent.cwd), "backend": "fake",
+    }))
+    server.AGENT_DIRECTORY = outside
+    with pytest.raises(server.MessagingError, match="runtime/agents"):
+        server.run_script("scripts/test.py", [])
+
+
+def test_run_script_reports_a_non_executable_wrapper(beeloop_root):
+    directory = beeloop_root / "runtime" / "scripts"
+    directory.mkdir()
+    helper = directory / "wrapper"
+    helper.write_text("#!/bin/sh\nexit 0\n")
+    helper.chmod(0o644)
+    with pytest.raises(scripts.ScriptError, match="cannot run script"):
+        scripts.run("scripts/wrapper")
