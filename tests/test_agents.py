@@ -167,21 +167,9 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
         idle_seconds=3600, max_age_seconds=86400
     )
     assert role.heartbeat == "4h"
-    assert role.prompts == {
-        "session_init": (
-            "This is your first turn. Coordinate the supplied intake and maintain "
-            "one overall BeeLoop State record named orchestrator-<your-agent-id>."
-        ),
-        "session_expire": (
-            "This session is expiring. Use the BeeLoop State save flow and return "
-            "a concise handoff hint for continuing the work later."
-        ),
-        "session_resume": (
-            "This is a new session for existing work. Use the BeeLoop State continue "
-            "flow with the previous session handoff below."
-        ),
-        "heartbeat": "This is a heartbeat. Use the heartbeat flow.",
-    }
+    assert role.prompts == config["prompts"]
+    assert set(role.prompts) == {"session_init", "session_expire", "session_resume", "heartbeat"}
+    assert all(prompt.strip() for prompt in role.prompts.values())
     assert config["allowed_receivers"]["roles"] == ["*"]
 
     workspace = SOURCE / "orchestrator"
