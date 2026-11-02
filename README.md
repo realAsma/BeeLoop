@@ -67,4 +67,4 @@ cp orchestrator/SOUL_template.md orchestrator/SOUL.md
 
 Add [skills](orchestrator/.agents/skills/) for workflows you repeat.
 For storage locations, configuration, and upgrades, see
-[Advanced deployment and configuration](configs/README.md).
+[Configuration](configs/README.md).

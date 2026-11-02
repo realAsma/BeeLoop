@@ -1,6 +1,6 @@
 ---
 name: worker-delegation
-description: Choose and dispatch BeeLoop workers with runtime-supplied assignment instructions and authorized result callbacks.
+description: Choose workers and send assignments using BeeLoop agent creation and messaging.
 ---
 
 # Worker delegation
@@ -8,25 +8,27 @@ description: Choose and dispatch BeeLoop workers with runtime-supplied assignmen
 ## Choosing workers
 
 Give workers coherent scopes in the relevant project workspace. Reuse a worker
-when its context helps; start fresh for independent work. Workers can organize
-execution and use native subagents or parallel work as needed.
+you created when its context helps; start fresh for independent work. Workers
+can organize execution and use native subagents or parallel work as needed.
 
 ## Dispatch and results
 
-Call `delegate_worker(cwd=..., assignment=...)` with scope, context, deliverables,
-and checks. The runtime creates the worker with your exact callback permission
-and template instructions for execution, verification, and reporting; no
-boilerplate rewrite or worker-permission edits are needed.
+Create a worker with `create_agent(role="worker", cwd=...)`, or reuse a worker
+you created. New workers are authorized to reply to the orchestrator
+that created them; no permission edits are needed.
 
-To reuse your worker from this tool, pass its `worker_id` and the same workspace.
+Read the [assignment prompt](prompts/assignment.md), fill in the workspace,
+scope, context, deliverables, and checks, and send it with `message` to the
+worker's agent ID. Include the optional state prompt below when useful.
 
-Retain `receiver_agent_id` and end your turn to stay available for intake;
+Retain the worker ID and end your turn to stay available for intake;
 acceptance confirms dispatch, not completion. Workers return delivery-ready
 results or blockers; communicate them through relevant sources.
 
 ## Worker state
 
-When a worker's work may be useful later, set `save_state=true` on delegation.
-The template then explicitly asks it to use `beeloop-state:save` and return its
-record's `work_name` and `cwd`. Keep a brief summary and that reference in your
-overall record for future sessions. Otherwise the worker simply returns results.
+When a worker's work may be useful later, append the
+[worker-state prompt](prompts/worker-state.md) to explicitly request
+`beeloop-state:save` and the record's `work_name` and `cwd`. Keep a brief summary
+and that reference in your overall record for future sessions. Otherwise the
+worker simply returns results.

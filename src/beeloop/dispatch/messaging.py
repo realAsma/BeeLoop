@@ -8,9 +8,7 @@ import sys
 import tomllib
 from dataclasses import dataclass
 from functools import partial
-from importlib.resources import files
 from pathlib import Path
-from string import Template
 from typing import Any
 
 from beeloop import agents as ag
@@ -62,61 +60,14 @@ def create_agent(
     cwd: str | None = None,
 ) -> dict[str, str]:
     """Authorize and create an agent without dispatching a turn."""
+    sender = _identity(sender_directory)
     allowed = _receiver_policy(sender_directory)
-    created = _create(allowed, role, cwd=cwd)
+    created = _create(allowed, role, cwd=cwd, sender=sender)
     return {
         "agent_id": created.agent_id,
         "role": created.record["role"],
         "cwd": str(created.cwd),
     }
-
-
-def delegate_worker(
-    sender_directory: Path,
-    cwd: str,
-    assignment: str,
-    worker_id: str | None = None,
-    save_state: bool = False,
-) -> dict[str, str]:
-    """Create or reuse a caller's worker and dispatch a standard assignment."""
-    sender = _identity(sender_directory)
-    if sender["role"] != "orchestrator":
-        raise MessagingError("worker delegation requires a bound orchestrator")
-    if not isinstance(cwd, str) or not cwd.strip():
-        raise MessagingError("cwd must be a non-empty string")
-    if not isinstance(assignment, str) or not assignment.strip():
-        raise MessagingError("assignment must not be empty")
-    if worker_id is not None and (not isinstance(worker_id, str) or not worker_id):
-        raise MessagingError("worker_id must be a non-empty agent ID")
-    if not isinstance(save_state, bool):
-        raise MessagingError("save_state must be a boolean")
-
-    where = workspace(load_role("worker"), cwd)
-    assets = files("beeloop.agents").joinpath("assets")
-    template = Template(assets.joinpath("worker-assignment.md").read_text(encoding="utf-8"))
-    state_request = assets.joinpath("worker-state.md").read_text(encoding="utf-8") if save_state else ""
-    payload = template.substitute(
-        assignment=assignment,
-        cwd=str(where),
-        delegator_id=sender["agent_id"],
-        state_request=state_request,
-    )
-    allowed = _receiver_policy(sender_directory)
-    if worker_id is None:
-        worker = _create(
-            allowed, "worker", cwd=str(where), delegator_agent_id=sender["agent_id"]
-        )
-    else:
-        worker = ag.restore(worker_id)
-        if not allowed.allows(worker.record["role"], worker.agent_id):
-            raise MessagingError(f"may not delegate to worker {worker_id!r}")
-        if worker.record["role"] != "worker" or worker.record.get("delegator_agent_id") != sender["agent_id"]:
-            raise MessagingError("reuse requires a worker created by this orchestrator's delegate_worker")
-        if worker.cwd != where:
-            raise MessagingError("a reused worker must have the requested cwd")
-        if worker.status == "closed":
-            raise MessagingError("cannot reuse a closed worker")
-    return send(sender_directory, worker.agent_id, payload)
 
 
 def send(
@@ -128,10 +79,10 @@ def send(
     if not msg.strip():
         raise MessagingError("msg must not be empty")
 
-    sender_id = _identity(sender_directory)["agent_id"]
-    source = f"agent:{sender_id}"
+    sender = _identity(sender_directory)
+    source = f"agent:{sender['agent_id']}"
     recipient = _resolve(
-        receiver, sender_id, source, _receiver_policy(sender_directory)
+        receiver, sender, source, _receiver_policy(sender_directory)
     )
 
     _submit(
@@ -248,7 +199,7 @@ def _string_list(value: Any, path: Path, field: str) -> list[str]:
 
 def _resolve(
     receiver: str | dict[str, Any],
-    sender_id: str,
+    sender: dict[str, str],
     source: str,
     allowed: AllowedReceivers,
 ) -> ag.Agent:
@@ -263,13 +214,13 @@ def _resolve(
                 raise MessagingError(
                     f"role {route.role!r} is not allowed to create a message route"
                 )
-            recipient = agent_for(route, creator=partial(_create, allowed))
+            recipient = agent_for(route, creator=partial(_create, allowed, sender=sender))
     else:
         raise MessagingError("receiver must be an agent ID or a route object")
 
     if not allowed.allows(recipient.record["role"], recipient.agent_id):
         raise MessagingError(
-            f"agent {sender_id!r} may not send to role "
+            f"agent {sender['agent_id']!r} may not send to role "
             f"{recipient.record['role']!r} or agent {recipient.agent_id!r}"
         )
     return recipient
@@ -279,10 +230,14 @@ def _create(
     allowed: AllowedReceivers,
     role: str,
     cwd: str | None = None,
+    *,
+    sender: dict[str, str],
     **record: Any,
 ) -> ag.Agent:
     if not allowed.allows_role(role):
         raise MessagingError(f"role {role!r} is not allowed to create an agent")
+    if sender["role"] == "orchestrator" and role == "worker":
+        record["delegator_agent_id"] = sender["agent_id"]
     return ag.create(role, cwd=cwd, **record)
 
 

@@ -50,7 +50,7 @@
     },
     "delegator_agent_id": {
       "$ref": "#/$defs/uuid",
-      "description": "The orchestrator that delegated this worker, authorized as its exact callback recipient."
+      "description": "The orchestrator that created this worker, authorized as its exact callback recipient."
     },
     "instance": {
       "type": "string",

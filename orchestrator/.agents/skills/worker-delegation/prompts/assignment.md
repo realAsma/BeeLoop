@@ -3,11 +3,10 @@ Return delivery-ready results with relevant evidence, artifacts, and remaining
 limitations. Organize your work and use native subagents or parallel execution
 as needed.
 
-Workspace: $cwd
+Workspace: <workspace>
 
 Assignment:
-$assignment
+<scope, context, deliverables, and checks>
 
-$state_request
-Report your result or blocker to orchestrator $delegator_id using the
-beeloop-tools message tool. Its exact agent ID is authorized as your callback.
+Report your result or blocker to the orchestrator identified by this message's
+agent source using the beeloop-tools message tool.

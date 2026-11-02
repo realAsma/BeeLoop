@@ -7,17 +7,14 @@ messages need no extra fetch; the helper retrieves fuller thread context and
 file bytes as needed, returning absolute paths for native document and image
 tools. Initial metadata does not inline images.
 
-The helper uses the gateway's `BEELOOP_PYTHON` interpreter even when an agent's
-shell changes `PATH`. Outside the gateway, it uses `python3`; run the helper in
-the Python environment where BeeLoop and its Slack extra are installed.
-
 `reply` and `upload` answer threads authenticated by this input. Only `dm-thread`
 sends without an inbound event: it opens an owner DM thread for owner-configured
 scheduled work (such as `research-digest`), always targeting `SLACK_ALLOWED_USER_ID`.
 
 ## Setup
 
-1. Install the optional dependency:
+1. Use the Python environment where BeeLoop is installed, and add its Slack
+   dependency:
 
 ```sh
 python3 -m pip install -e '.[slack]'

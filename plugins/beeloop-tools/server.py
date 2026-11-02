@@ -64,22 +64,6 @@ def create_agent(role: str, cwd: str | None = None) -> dict[str, str]:
 
 
 @_tool
-def delegate_worker(
-    cwd: str,
-    assignment: str,
-    worker_id: str | None = None,
-    save_state: bool = False,
-) -> dict[str, str]:
-    """Dispatch a standard assignment to a new or reused worker of this orchestrator.
-
-    The runtime authorizes the exact caller callback and supplies worker
-    execution, verification, and reporting instructions. Set save_state only
-    when a durable worker record would be useful. Acceptance is asynchronous.
-    """
-    return messaging.delegate_worker(_agent_directory(), cwd, assignment, worker_id, save_state)
-
-
-@_tool
 def message(receiver: str | dict[str, Any], msg: str) -> dict[str, str]:
     """Asynchronously send a message to an agent ID or role route.
 
