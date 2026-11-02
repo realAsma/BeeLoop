@@ -51,7 +51,6 @@ def parse_timestamp(value: str) -> dt.datetime:
 
 
 def create(
-    timer_id: str,
     payload: Mapping[str, Any],
     *,
     after: str | None = None,
@@ -74,17 +73,29 @@ def create(
             raise TimerError("duration must include at least the first occurrence")
 
     due = current + dt.timedelta(seconds=delay)
+    due_at = timestamp(due)
+    until = (
+        timestamp(current + dt.timedelta(seconds=duration_seconds))
+        if duration_seconds is not None
+        else None
+    )
     return Timer(
-        timer_id=timer_id,
-        due_at=timestamp(due),
+        timer_id=schedule_key(due_at, interval, until, payload.get("_source", "timer")),
+        due_at=due_at,
         payload=payload,
         every_seconds=interval,
-        until=(
-            timestamp(current + dt.timedelta(seconds=duration_seconds))
-            if duration_seconds is not None
-            else None
-        ),
+        until=until,
     )
+
+
+def schedule_key(
+    first_due: str,
+    every_seconds: int | None = None,
+    until: str | None = None,
+    source: str = "timer",
+) -> str:
+    """Keep the initial schedule key stable as recurring due times advance."""
+    return f"{source}|{first_due}|{every_seconds or 0}|{until or ''}"
 
 
 def ordered(timers: Sequence[Timer]) -> list[Timer]:

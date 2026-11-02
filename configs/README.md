@@ -25,7 +25,3 @@ codex plugin add beeloop-tools@beeloop-tools
 # or
 claude plugin update beeloop-tools@beeloop-tools
 ```
-
-When migrating old intake mappings, copy effective `orchestrator` entries to the
-router key (role, workspace, backend, `default` instance), preserving recipient
-IDs. Keep old entries for rollback. New deployments need no migration.

@@ -6,9 +6,9 @@ import datetime as dt
 import fcntl
 import json
 import os
+import re
 import secrets
 import tempfile
-import uuid
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -23,6 +23,44 @@ from .backends import InputItem
 UTC = dt.timezone.utc
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
 PREPARED, DORMANT, CLOSED = "prepared", "dormant", "closed"
+
+AGENT_ID_PATTERN = r"[a-z]{2,12}-[a-z]{2,12}-(?:0[1-9]|[12][0-9]|3[01])-(?:0[1-9]|1[0-2])-[0-9]{2}"
+_ADJECTIVES = (
+    "able agile alert amber ample aqua avid azure "
+    "balanced basic beaming bold brave breezy bright brisk "
+    "bronze calm candid careful cheerful clever cloudy cobalt "
+    "comfy coral cozy crisp curious dapper daring dawn "
+    "deep deft eager early easy elated emerald even "
+    "fair faithful fancy fast festive fiery fine focused "
+    "fond frank fresh friendly frosty gentle glad glowing "
+    "golden graceful grand green happy hardy hazy helpful "
+    "honest humble icy ideal ivory jolly joyful keen "
+    "kind leafy light lively loyal lucky lunar mellow "
+    "merry mighty mint modest neat nimble noble novel "
+    "olive patient peach pearl perky placid playful polite "
+    "proud quiet rapid ready regal rosy royal ruby "
+    "sage sandy serene sharp silver simple sleek smart "
+    "smooth snowy solar solid spry steady still sunny "
+    "swift tidy vivid warm wise witty young zesty "
+).split()
+_NOUNS = (
+    "alpaca ant ape badger bat bear beaver bee "
+    "beetle bison boar bobcat buffalo bunny camel canary "
+    "carp cat cheetah chick clam cobra condor coral "
+    "cougar coyote crab crane cricket crow deer dingo "
+    "dog dolphin donkey dove dragon duck eagle egret "
+    "elk falcon ferret finch firefly fish flamingo fly "
+    "fox frog gazelle gecko gerbil goat goose gopher "
+    "gull hamster hare hawk hedgehog heron ibis jackal "
+    "jaguar jay koala koi lark lemur leopard lion "
+    "llama lobster loon lynx magpie manta mink mole "
+    "moose moth mouse mule newt octopus orca osprey "
+    "otter owl ox panda panther parrot pelican penguin "
+    "perch pigeon pony puma quail rabbit raven robin "
+    "salmon seal shark sheep sloth snail snake sparrow "
+    "spider squid swan swift tern tiger toad trout "
+    "turtle wasp weasel whale wolf wren yak zebra "
+).split()
 
 
 class AgentError(RuntimeError):
@@ -48,6 +86,12 @@ def runtime(*parts: str) -> Path:
 
 
 def agent_path(agent_id: str) -> Path:
+    if not isinstance(agent_id, str) or re.fullmatch(AGENT_ID_PATTERN, agent_id) is None:
+        raise AgentError(f"invalid agent ID {agent_id!r}; expected adjective-noun-DD-MM-YY")
+    try:
+        dt.datetime.strptime(agent_id[-8:], "%d-%m-%y")
+    except ValueError as exc:
+        raise AgentError(f"invalid agent ID {agent_id!r}; invalid creation date") from exc
     return root().joinpath("runtime", "agents", agent_id)
 
 
@@ -63,13 +107,21 @@ def now() -> str:
     return dt.datetime.now(UTC).strftime(STAMP)
 
 
-def new_agent_id() -> str:
-    """Return a time-ordered, unguessable UUIDv7 agent ID."""
-    stamp = int(dt.datetime.now(UTC).timestamp() * 1000)
-    raw = bytearray(stamp.to_bytes(6, "big") + secrets.token_bytes(10))
-    raw[6] = (raw[6] & 0x0F) | 0x70
-    raw[8] = (raw[8] & 0x3F) | 0x80
-    return str(uuid.UUID(bytes=bytes(raw)))
+def new_agent_id(created: str) -> str:
+    """Reserve a readable ID dated by its UTC creation timestamp."""
+    date = dt.datetime.strptime(created, STAMP).strftime("%d-%m-%y")
+    directory = runtime("agents")
+    capacity = len(_ADJECTIVES) * len(_NOUNS)
+    start = secrets.randbelow(capacity)
+    for offset in range(capacity):
+        adjective, noun = divmod((start + offset) % capacity, len(_NOUNS))
+        agent_id = f"{_ADJECTIVES[adjective]}-{_NOUNS[noun]}-{date}"
+        try:
+            (directory / agent_id).mkdir()
+        except FileExistsError:
+            continue
+        return agent_id
+    raise AgentError(f"all {capacity:,} agent names are reserved for {date}")
 
 
 @contextmanager

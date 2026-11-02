@@ -1,6 +1,6 @@
 {
   "name": "beeloop-tools",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Asynchronous messaging, source routing, and wake timers for BeeLoop agents.",
   "author": {
     "name": "BeeLoop"

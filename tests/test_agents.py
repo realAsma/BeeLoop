@@ -9,12 +9,14 @@ import threading
 import time
 import tomllib
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 
-from beeloop import agents as ag
+from beeloop import agents as ag, timers
 from beeloop.agents import records, roles, session_ttl
+from beeloop.agents import agent as agent_module
 from beeloop.agents.backends import BackendError, InputItem, fake
 from beeloop.config import config_path
 from tests.conftest import SOURCE, as_fake, make_role, orchestrator, poke, worker
@@ -30,7 +32,7 @@ def test_root_rejects_a_path_that_is_not_a_directory(monkeypatch, tmp_path):
 
 
 def test_resolving_an_agent_path_does_not_create_it():
-    missing = "0198ff2a-0000-7000-8000-000000000000"
+    missing = "missing-agent-02-11-26"
 
     path = records.agent_path(missing)
 
@@ -38,27 +40,77 @@ def test_resolving_an_agent_path_does_not_create_it():
     assert not path.exists()
 
 
-def test_agent_ids_are_version_7_and_ordered_by_time():
-    """uuid7 orders by its millisecond prefix, not within a millisecond.
+def test_agent_ids_include_the_creation_date_while_sessions_remain_uuids():
+    agent = orchestrator(backend="fake")
 
-    Ids minted in the same millisecond are separated only by random bits, so the
-    guarantee to assert is that the timestamp never goes backwards -- and that
-    ids minted a millisecond apart sort.
-    """
-    minted = [records.new_agent_id() for _ in range(200)]
-    for value in minted:
-        parsed = uuid.UUID(value)
-        assert parsed.version == 7
-        assert (parsed.int >> 62) & 0b11 == 0b10  # RFC 9562 variant
+    assert re.fullmatch(r"[a-z]+-[a-z]+-[0-9]{2}-[0-9]{2}-[0-9]{2}", agent.agent_id)
+    assert agent.agent_id[-8:] == timers.parse_timestamp(agent.record["created"]).strftime("%d-%m-%y")
+    assert records.agent_path(agent.agent_id).is_dir()
+    assert uuid.UUID(agent.session_id).version == 4
 
-    stamps = [uuid.UUID(value).int >> 80 for value in minted]
-    assert stamps == sorted(stamps)
 
-    spaced = []
-    for _ in range(5):
-        spaced.append(records.new_agent_id())
-        time.sleep(0.002)
-    assert spaced == sorted(spaced)
+def test_agent_name_and_record_share_one_utc_creation_time(monkeypatch):
+    monkeypatch.setattr(agent_module, "now", lambda: "2026-11-02T23:59:59Z")
+    monkeypatch.setattr(records, "now", lambda: "2026-11-03T00:00:00Z")
+
+    agent = worker(backend="fake")
+
+    assert agent.agent_id.endswith("-02-11-26")
+    assert agent.record["created"] == "2026-11-02T23:59:59Z"
+
+
+def test_closed_agent_names_stay_reserved(monkeypatch):
+    monkeypatch.setattr(records.secrets, "randbelow", lambda _: 0)
+    first = worker(backend="fake")
+    first.close()
+
+    second = worker(backend="fake")
+
+    assert second.agent_id != first.agent_id
+    assert ag.restore(first.agent_id).status == records.CLOSED
+
+
+def test_parallel_creation_retries_collisions_without_overwriting(monkeypatch):
+    monkeypatch.setattr(records.secrets, "randbelow", lambda _: 0)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        agents = list(executor.map(lambda _: worker(backend="fake"), range(16)))
+
+    assert len({agent.agent_id for agent in agents}) == len(agents)
+    assert all(ag.restore(agent.agent_id).record == agent.record for agent in agents)
+
+
+def test_agent_name_exhaustion_is_bounded(monkeypatch):
+    monkeypatch.setattr(records, "_ADJECTIVES", ["calm"])
+    monkeypatch.setattr(records, "_NOUNS", ["otter", "heron"])
+    monkeypatch.setattr(records.secrets, "randbelow", lambda _: 1)
+    assert records.new_agent_id("2026-11-02T23:59:59Z") == "calm-heron-02-11-26"
+    assert records.new_agent_id("2026-11-02T23:59:59Z") == "calm-otter-02-11-26"
+
+    with pytest.raises(ag.AgentError, match="all 2 agent names are reserved"):
+        records.new_agent_id("2026-11-02T23:59:59Z")
+
+
+def test_agent_name_namespace_resets_on_the_next_utc_day(monkeypatch):
+    monkeypatch.setattr(records, "_ADJECTIVES", ["calm"])
+    monkeypatch.setattr(records, "_NOUNS", ["otter"])
+    first = records.new_agent_id("2026-11-02T23:59:59Z")
+    second = records.new_agent_id("2026-11-03T00:00:00Z")
+
+    assert first == "calm-otter-02-11-26"
+    assert second == "calm-otter-03-11-26"
+    assert records.agent_path(first).is_dir()
+    assert records.agent_path(second).is_dir()
+
+
+@pytest.mark.parametrize("agent_id", [
+    "../calm-otter-02-11-26", "/tmp/calm-otter-02-11-26", "calm-otter-02-11-26/record.json",
+    "Calm-otter-02-11-26", "calm_otter-02-11-26", "calm-otter-02-11-26\n",
+    "calm-otter", "calm-otter-31-02-26", "calm-otter-00-11-26",
+    "0198ff2a-0000-7000-8000-000000000000",
+])
+def test_agent_paths_reject_invalid_and_legacy_ids(agent_id):
+    with pytest.raises(ag.AgentError, match="invalid agent ID"):
+        records.read(agent_id)
 
 
 # ----------------------------------------------------------------------- roles

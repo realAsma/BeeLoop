@@ -21,7 +21,7 @@ def test_an_agent_id_continues_and_a_role_creates():
 
 def test_naming_an_agent_that_does_not_exist_raises_rather_than_creating_one():
     """A silent cold start would strand whatever was pointing at the old id."""
-    missing = "0198ff2a-0000-7000-8000-000000000000"
+    missing = "missing-agent-02-11-26"
     with pytest.raises(ag.UnknownAgent, match="runtime/agents"):
         ag.Agent(missing)
     assert not records.record_path(missing).exists()
@@ -138,3 +138,11 @@ def test_an_agent_may_not_carry_a_task():
 def test_an_unknown_schema_name_says_what_there_is():
     with pytest.raises(ag.AgentError, match="assets/ has Agent"):
         records.validate({}, "NoSuchSchema")
+
+
+def test_the_record_schema_rejects_uuid_agent_ids():
+    agent = worker(backend="fake")
+    record = {**agent.record, "agent_id": "0198ff2a-0000-7000-8000-000000000000"}
+
+    with pytest.raises(ag.AgentError, match="agent_id"):
+        records.validate(record, "Agent")

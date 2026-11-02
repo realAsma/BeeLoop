@@ -16,9 +16,9 @@ from beeloop.agents.backends.claude import ClaudeBackend, _argv, _render
 
 def session(**kwargs) -> Session:
     base = dict(
-        agent_id="0198ff2a-0000-7000-8000-000000000000",
+        agent_id="calm-otter-02-11-26",
         agent_dir=Path(
-            "/tmp/runtime/agents/0198ff2a-0000-7000-8000-000000000000"
+            "/tmp/runtime/agents/calm-otter-02-11-26"
         ),
         session_id="f2e0f791-0000-4000-8000-000000000000",
         prepared=True,

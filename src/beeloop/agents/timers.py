@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -31,27 +31,23 @@ def create_wake(
         if record.get("status") == records.CLOSED:
             raise timers.TimerError("closed agents cannot create timers")
         timer = timers.create(
-            records.new_agent_id(),
             {"message": message},
             after=after,
             every=every,
             duration=duration,
             current=current,
         )
-        stored = _load_timers(record)
-        record["timers"] = [asdict(item) for item in timers.ordered([*stored, timer])]
+        timer = _append_prompt(record, timer)
         records.write(record, _schema(record))
     return timer
 
 
 def arm_recurring(record: dict[str, Any], *, message: str, every: str) -> None:
     timer = timers.create(
-        records.new_agent_id(),
         {"message": message},
         every=every,
     )
-    stored = _load_timers(record)
-    record["timers"] = [asdict(item) for item in timers.ordered([*stored, timer])]
+    _append_prompt(record, timer)
 
 
 def list_wakes(agent_id: str) -> list[timers.Timer]:
@@ -130,6 +126,19 @@ def _due_candidates(current: dt.datetime) -> list[tuple[dt.datetime, str, str]]:
         ):
             continue
     return sorted(candidates)
+
+
+def _append_prompt(record: dict[str, Any], timer: timers.Timer) -> timers.Timer:
+    stored = _load_timers(record)
+    existing = next((item for item in stored if item.timer_id == timer.timer_id), None)
+    if existing is not None:
+        timer = replace(existing, payload={
+            **existing.payload,
+            "message": f"{existing.payload['message']}\n\n{timer.payload['message']}",
+        })
+        stored.remove(existing)
+    record["timers"] = [asdict(item) for item in timers.ordered([*stored, timer])]
+    return timer
 
 
 def _load_timers(record: Mapping[str, Any]) -> list[timers.Timer]:

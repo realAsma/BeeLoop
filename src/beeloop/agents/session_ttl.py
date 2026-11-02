@@ -74,10 +74,11 @@ def arm(record: dict[str, Any], policy: Policy | None, prompt: str | None) -> No
     if policy is None or prompt is None:
         return
     scheduled = _stored(record)
+    due_at = deadline(record, policy)
     scheduled.append(
         timers.Timer(
-            timer_id=records.new_agent_id(),
-            due_at=deadline(record, policy),
+            timer_id=timers.schedule_key(due_at, source=EXPIRY_SOURCE),
+            due_at=due_at,
             payload={"message": prompt, _TIMER_SOURCE_FIELD: EXPIRY_SOURCE},
         )
     )

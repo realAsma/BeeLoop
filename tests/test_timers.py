@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
 import pytest
@@ -40,13 +41,98 @@ def test_duration_rejects_everything_but_a_positive_integer_and_known_unit(value
 
 def test_timer_arguments_are_validated():
     with pytest.raises(timers.TimerError, match="exactly one"):
-        timers.create("id", {}, current=at(12))
+        timers.create({}, current=at(12))
     with pytest.raises(timers.TimerError, match="exactly one"):
-        timers.create("id", {}, after="1h", every="1h", current=at(12))
+        timers.create({}, after="1h", every="1h", current=at(12))
     with pytest.raises(timers.TimerError, match="only meaningful"):
-        timers.create("id", {}, after="1h", duration="2h", current=at(12))
+        timers.create({}, after="1h", duration="2h", current=at(12))
     with pytest.raises(timers.TimerError, match="first occurrence"):
-        timers.create("id", {}, every="2h", duration="1h", current=at(12))
+        timers.create({}, every="2h", duration="1h", current=at(12))
+
+
+def test_schedule_keys_encode_the_first_due_cadence_lifetime_and_source():
+    first = timers.create({"message": "first"}, every="1h", current=at(10))
+    same = timers.create({"message": "second"}, every="60m", current=at(10))
+    cadence = timers.create({"message": "other"}, every="30m", current=at(10, 30))
+    bounded = timers.create({}, every="1h", duration="2h", current=at(10))
+    expiry = timers.create({"_source": "session-ttl"}, every="1h", current=at(10))
+
+    assert first.timer_id == same.timer_id
+    assert len({first.timer_id, cadence.timer_id, bounded.timer_id, expiry.timer_id}) == 4
+    _, advanced = timers.take_due([first], at(12))
+    assert advanced[0].timer_id == first.timer_id
+    assert advanced[0].due_at != first.due_at
+
+
+def test_matching_wake_schedules_append_prompts_and_cancel_as_one():
+    agent = worker()
+    first = agent_timers.create_wake(
+        agent.agent_id, message="first task", after="1h", current=at(10)
+    )
+    merged = agent_timers.create_wake(
+        agent.agent_id, message="second task", after="60m", current=at(10)
+    )
+
+    assert merged.timer_id == first.timer_id
+    assert merged.payload["message"] == "first task\n\nsecond task"
+    assert agent_timers.list_wakes(agent.agent_id) == [merged]
+    envelope = agent_timers.poll(at(11))
+    assert envelope.msg == "first task\n\nsecond task"
+    assert agent_timers.list_wakes(agent.agent_id) == []
+
+    repeated = agent_timers.create_wake(
+        agent.agent_id, message="repeat", every="1h", current=at(10)
+    )
+    assert agent_timers.cancel_wake(agent.agent_id, repeated.timer_id)
+    assert agent_timers.list_wakes(agent.agent_id) == []
+
+
+def test_concurrent_matching_schedules_keep_every_prompt():
+    agent = worker()
+
+    def schedule(index):
+        return agent_timers.create_wake(
+            agent.agent_id, message=f"task {index}", after="1h", current=at(10)
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        scheduled = list(executor.map(schedule, range(8)))
+
+    [combined] = agent_timers.list_wakes(agent.agent_id)
+    assert {timer.timer_id for timer in scheduled} == {combined.timer_id}
+    assert set(combined.payload["message"].split("\n\n")) == {f"task {index}" for index in range(8)}
+
+
+def test_matching_due_times_keep_distinct_cadence_and_lifetimes():
+    agent = worker()
+    recurring = agent_timers.create_wake(
+        agent.agent_id, message="hourly", every="1h", current=at(10)
+    )
+    one_shot = agent_timers.create_wake(
+        agent.agent_id, message="once", after="1h", current=at(10)
+    )
+    bounded = agent_timers.create_wake(
+        agent.agent_id, message="bounded", every="1h", duration="2h", current=at(10)
+    )
+
+    assert len(agent_timers.list_wakes(agent.agent_id)) == 3
+    assert len({recurring.timer_id, one_shot.timer_id, bounded.timer_id}) == 3
+
+
+def test_matching_ordinary_wake_does_not_merge_with_session_expiry():
+    agent = orchestrator(backend="fake")
+    expiry = next(t for t in agent_timers.list_wakes(agent.agent_id) if session_ttl.is_expiry_timer(t))
+    due = timers.parse_timestamp(expiry.due_at)
+    ordinary = agent_timers.create_wake(
+        agent.agent_id, message="ordinary", after="1h", current=due - dt.timedelta(hours=1)
+    )
+
+    assert ordinary.due_at == expiry.due_at
+    assert ordinary.timer_id != expiry.timer_id
+    assert session_ttl.is_expiry_timer(expiry)
+    assert ordinary.payload == {"message": "ordinary"}
+    assert agent_timers.cancel_wake(agent.agent_id, ordinary.timer_id)
+    assert any(t.timer_id == expiry.timer_id for t in agent_timers.list_wakes(agent.agent_id))
 
 
 def test_take_due_is_deterministic_and_removes_a_one_shot():
