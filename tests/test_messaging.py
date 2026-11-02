@@ -6,6 +6,8 @@ import asyncio
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -17,6 +19,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 import beeloop.dispatch.dispatch as dsp
+from beeloop import gateway, inputs
 from beeloop import agents as ag
 from beeloop.agents import records
 from beeloop.agents.backends import fake
@@ -132,6 +135,7 @@ def test_server_introspection_with_and_without_agent_binding(bound, beeloop_root
     assert [tool.name for tool in listed.tools] == [
         "get_agent_id",
         "get_beeloop_root",
+        "input_reply",
         "create_agent",
         "message",
         "route_source",
@@ -144,7 +148,7 @@ def test_server_introspection_with_and_without_agent_binding(bound, beeloop_root
     assert root_tool.input_schema["properties"] == {}
     assert "required" not in root_tool.input_schema
     assert resolved_root.content[0].text == str(beeloop_root.resolve())
-    create = listed.tools[2]
+    create = next(tool for tool in listed.tools if tool.name == "create_agent")
     assert set(create.input_schema["properties"]) == {"role", "cwd"}
     assert set(create.input_schema["required"]) == {"role"}
     assert "without starting" in create.description
@@ -343,6 +347,7 @@ def test_identity_is_read_from_the_bound_record_on_every_call():
 @pytest.mark.parametrize(
     "call",
     [
+        lambda: server.input_reply("slack-private:thread", "hello"),
         lambda: server.create_agent("worker", "project"),
         lambda: server.message("agent", "work"),
         server.list_agents,
@@ -845,3 +850,103 @@ def test_busy_delivery_parks_then_drains_on_the_next_message():
     ]
     log = (records.root() / "logs" / "dispatch.log").read_text("utf-8")
     assert "parked" in log and "delivered" in log
+
+
+def test_cold_slack_reply_uses_gateway_python_before_source_transfer(beeloop_root, monkeypatch):
+    source = "slack-private:D123:1712345678901234"
+    router = as_fake(ag.create("router", instance="default"))
+    recipient = as_fake(orchestrator())
+    route = Route(source, str(router.cwd), "router", "fake", "default")
+    route.new(router.agent_id)
+    source_root = beeloop_root / "runtime" / "sources" / "slack-private"
+    shutil.copytree(SERVER_PATH.parents[2] / "runtime" / "sources" / "slack-private", source_root)
+    state = source_root / "state"
+    state.mkdir(exist_ok=True)
+    (state / "state.json").write_text(json.dumps({
+        "sessions": {source: {"channel": "D123", "thread_ts": "1712345678.901234"}},
+    }))
+    (source_root / "secrets.env").write_text(
+        "SLACK_APP_TOKEN=xapp-test\nSLACK_BOT_TOKEN=xoxb-test\nSLACK_ALLOWED_USER_ID=UOWNER\n"
+    )
+    sent = beeloop_root / "sent.json"
+    (source_root / "slack_sdk.py").write_text(
+        "import json\nfrom pathlib import Path\n"
+        "class WebClient:\n"
+        "    def __init__(self, token): assert token == 'xoxb-test'\n"
+        "    def chat_postMessage(self, **kwargs):\n"
+        f"        Path({str(sent)!r}).write_text(json.dumps(kwargs))\n"
+        "        return {'channel': kwargs['channel'], 'ts': '1712345680.000001'}\n"
+    )
+    python = sys.executable
+    invoked = beeloop_root / "interpreter-used"
+    gateway_python = beeloop_root / "gateway-python"
+    gateway_python.write_text(
+        f"#!/bin/sh\nprintf used > '{invoked}'\nexec '{python}' \"$@\"\n"
+    )
+    gateway_python.chmod(0o755)
+    monkeypatch.setattr(gateway.sys, "executable", str(gateway_python))
+    monkeypatch.setattr(gateway, "poll", lambda root: None)
+    def stop(_):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(gateway.time, "sleep", stop)
+    assert gateway.run(beeloop_root) == 0
+    monkeypatch.setattr(gateway.sys, "executable", python)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setenv("BEELOOP_PYTHON", "/missing/agent-python")
+    text = "I’ll check this.\nLiteral shell text: $(exit 9) `exit 9`"
+
+    async def acknowledge():
+        async with live_session(recipient) as session:
+            ok = await session.call_tool("input_reply", {"source": source, "text": text})
+            refused = await session.call_tool("input_reply", {
+                "source": "slack-private:D999:1712345678901234", "text": "wrong destination",
+            })
+            return ok, refused
+
+    ok, refused = asyncio.run(acknowledge())
+    assert not ok.is_error
+    assert json.loads(ok.content[0].text)["ok"] is True
+    assert refused.is_error
+    assert "has not been authenticated" in refused.content[0].text
+    assert invoked.read_text() == "used"
+    assert json.loads(sent.read_text()) == {
+        "channel": "D123", "thread_ts": "1712345678.901234", "text": text,
+    }
+    # The first reply does not race source transfer; later messages bypass the router.
+    assert route.resolve() == router.agent_id
+    bind(router)
+    server.route_source(source, recipient.agent_id)
+    dsp.dispatch(Envelope(role="router", agent_id=None, cwd=str(router.cwd), backend="fake",
+                          instance="default", source=source, msg="follow-up"))
+    assert fake.turns(recipient.agent_id)[-1][-1] == [source, "follow-up"]
+    assert fake.turns(router.agent_id) == []
+
+
+@pytest.mark.parametrize("source", ["../outside:session", "/tmp/run:session", "no-session", "slack-private:"])
+def test_input_reply_rejects_invalid_sources_before_running_helpers(source, monkeypatch):
+    monkeypatch.setattr(inputs.subprocess, "run", lambda *a, **kw: pytest.fail("helper ran"))
+    with pytest.raises(inputs.InputError, match="source must"):
+        inputs.reply(source, "hello")
+
+
+def test_input_reply_refuses_helpers_outside_the_source_tree(beeloop_root, monkeypatch):
+    directory = beeloop_root / "runtime" / "sources" / "external"
+    directory.mkdir(parents=True)
+    (directory / "external").symlink_to("/bin/sh")
+    with pytest.raises(inputs.InputError, match="no reply helper"):
+        inputs.reply("external:session", "hello")
+
+
+def test_input_reply_timeout_does_not_retry(beeloop_root, monkeypatch):
+    directory = beeloop_root / "runtime" / "sources" / "example"
+    directory.mkdir(parents=True)
+    (directory / "example").touch()
+    (beeloop_root / "runtime" / "python").write_text(sys.executable)
+    calls = []
+    def timeout(*args, **kwargs):
+        calls.append(args)
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+    monkeypatch.setattr(inputs.subprocess, "run", timeout)
+    with pytest.raises(inputs.InputError, match="delivery is unknown"):
+        inputs.reply("example:session", "hello")
+    assert len(calls) == 1

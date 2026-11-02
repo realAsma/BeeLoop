@@ -49,6 +49,7 @@ def test_run_prepares_the_root_and_stops_cleanly(beeloop_root: Path, monkeypatch
     assert gateway.run(beeloop_root) == 0
     assert polls == [beeloop_root]
     assert (beeloop_root / "inputs.d").is_dir()
+    assert (beeloop_root / "runtime" / "python").read_text().strip() == sys.executable
     assert "started;" in (beeloop_root / "logs" / "loop.log").read_text()
 
 

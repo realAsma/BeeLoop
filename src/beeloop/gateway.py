@@ -27,6 +27,11 @@ def run(root: Path) -> int:
     logs = root / "logs"
     inputs.mkdir(parents=True, exist_ok=True)
     logs.mkdir(parents=True, exist_ok=True)
+    runtime = root / "runtime"
+    runtime.mkdir(parents=True, exist_ok=True)
+    python = runtime / "python.tmp"
+    python.write_text(sys.executable + "\n", encoding="utf-8")
+    python.replace(runtime / "python")
     _log(
         logs / "loop.log",
         f"started; root={root} interval={interval:g}s "

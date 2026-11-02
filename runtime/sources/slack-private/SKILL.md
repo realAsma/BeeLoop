@@ -5,8 +5,9 @@ description: Fetch and reply to authenticated owner DMs delivered through the sl
 
 # Handle private Slack input
 
-The complete `slack-private:` source is the authenticated reply handle. Use the
-runtime helper for every operation; do not send responses through a generic
+The complete `slack-private:` source is the authenticated reply handle. Use
+`input_reply` for text replies and the runtime helper for other operations;
+do not send responses through a generic
 Slack connector or the owner's Slack identity.
 
 For an inbound event:
@@ -21,9 +22,9 @@ For an inbound event:
    the task needs attached files. Downloads return absolute local paths and
    MIME types. Read documents or inspect images with your native file tools;
    file metadata in the initial intake does not itself provide image pixels.
-3. Reply with `<root>/runtime/sources/slack-private/slack-private reply
-   --source <source> --text -`. Use `upload --source <source> --file <path>` for
-   files.
+3. Reply with `input_reply(source="<complete source>", text="<reply>")`.
+   Use `<root>/runtime/sources/slack-private/slack-private upload
+   --source <source> --file <path>` for files.
 
 A scheduled job that the owner configured, with no inbound event to reply to,
 opens its own thread instead: `dm-thread --header <short line> --text -`. It

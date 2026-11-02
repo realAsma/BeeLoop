@@ -4,4 +4,8 @@ set -euo pipefail
 SOURCE_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
 export PYTHONPATH="$SOURCE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
+if [[ -f "$SOURCE_ROOT/../../python" ]]; then
+    IFS= read -r BEELOOP_PYTHON < "$SOURCE_ROOT/../../python"
+fi
+
 exec "${BEELOOP_PYTHON:-python3}" -m slack_private.cli "$@"

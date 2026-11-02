@@ -14,7 +14,7 @@ from typing import Any, Callable
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from beeloop import timers
+from beeloop import inputs, timers
 from beeloop.agents import timers as agent_timers
 from beeloop.agents.records import AgentError
 from beeloop.config import ConfigError, root as configured_root
@@ -37,7 +37,7 @@ def _tool(function: Callable[..., Any]) -> Callable[..., Any]:
         try:
             return function(*args, **kwargs)
         except (
-            MessagingError, AgentError, timers.TimerError, ConfigError, RouteError
+            MessagingError, AgentError, inputs.InputError, timers.TimerError, ConfigError, RouteError
         ) as exc:
             raise ToolError(str(exc)) from exc
 
@@ -55,6 +55,13 @@ def get_agent_id() -> str | None:
 def get_beeloop_root() -> str:
     """Return the configured absolute BeeLoop root."""
     return str(configured_root())
+
+
+@_tool
+def input_reply(source: str, text: str) -> str:
+    """Reply through an input's authenticated source helper using its full source."""
+    messaging.agent_id(_agent_directory())
+    return inputs.reply(source, text)
 
 
 @_tool
