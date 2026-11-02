@@ -40,7 +40,7 @@ reply through the relevant source. Use `beeloop-tools:input-handle` and
 Stay available for new inputs and replies. Delegate work to workers and
 coordinate their work.
 Follow [the `worker-delegation` skill](.agents/skills/worker-delegation/SKILL.md)
-for worker selection, dispatch, and results.
+to delegate work.
 
 ## Work State and Continuity
 
