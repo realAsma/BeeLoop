@@ -10,16 +10,18 @@ description: Choose workers and send assignments using BeeLoop agent creation an
 2. For a new worker, call `create_agent(role="worker", cwd=...)`.
 3. Send the assignment with `message` to its agent ID using the prompt below.
    Include the optional line only when the work may be useful later.
-4. Retain the worker ID and end your turn. Acceptance confirms dispatch, not
-   completion; communicate results or blockers through relevant intakes.
 
-```text
-Assignment: <scope, context, deliverables and checks>
-Report results or blockers back to me using message.
-[Optional: use beeloop-state:save and return work_name and cwd.]
-```
+   ```text
+   Assignment: <scope, context, deliverables and checks>
+   Report results or blockers back to me using the BeeLoop message MCP tool.
+   [Optional: use beeloop-state:save and return work_name and cwd.]
+   ```
+
+4. Retain the worker ID. Do not wait for worker completion. End your turn; the
+   worker will message you in a later turn. Acceptance confirms dispatch, not
+   completion. Communicate results or blockers through relevant intakes.
 
 ## Worker state
 
-- When a worker returns a saved record, keep a brief summary and its `work_name`
-  and `cwd` in your overall record for future sessions.
+- Keep the returned `work_name` and `cwd` as an artifact reference in your
+  overall BeeLoop State record for future sessions.
