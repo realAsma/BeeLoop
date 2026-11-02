@@ -13,8 +13,8 @@ scheduled work (such as `research-digest`), always targeting `SLACK_ALLOWED_USER
 
 ## Setup
 
-1. Use the Python environment where BeeLoop is installed, and add its Slack
-   dependency:
+1. Install BeeLoop and its Slack dependency in the Python environment that
+   runs your BeeLoop and BeeLoop State MCP servers:
 
 ```sh
 python3 -m pip install -e '.[slack]'

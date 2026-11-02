@@ -33,7 +33,6 @@ Always route with awareness of existing work.
 - Use the supplied intake content. The orchestrator can fetch more source context
   or attachments when needed.
 - Forward external inputs with `message`, unchanged and in their original order.
-  Do not forward or route lifecycle instructions such as `session-init`.
   Keep its original source and links. Ask the orchestrator to handle it and reply
   through that source. Then call `route_source` for each source so future messages
   go directly to that orchestrator. If delivery fails, retain the source and retry
@@ -42,3 +41,14 @@ Always route with awareness of existing work.
 - Forward inputs together when they arrive together from the same source.
 - If `list_agents` shows a queued input's source is already connected, forward it
   to that orchestrator without changing the mapping.
+
+### Forwarding example
+
+For a new `slack-private:D123:1712345678901234` intake, forward only its input:
+
+```text
+message(receiver="<orchestrator-id>", msg='<input source="slack-private:D123:1712345678901234">\n<original content>\n</input>')
+route_source(source="slack-private:D123:1712345678901234", receiver_agent_id="<orchestrator-id>")
+```
+
+The first intake goes through you; follow-ups go directly to that orchestrator.

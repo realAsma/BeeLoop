@@ -6,9 +6,10 @@ description: Handle or reply to a BeeLoop input. Use when a non-agent input need
 # Handle an input
 
 The `source` on an input is its external session and reply handle. BeeLoop does
-not deliver your ordinary model response back to that source. Sources can
-support text replies through `input_reply(source="<complete source>",
-text="<reply>")`; follow their source instructions below.
+not deliver your ordinary model response back to that source. Orchestrators
+can call source helpers with `run_script(script=..., args=..., stdin=...)`,
+using paths relative to `runtime/`. Check the returned `exit_code` before
+reporting success. Follow the source instructions below.
 
 For a source shaped as `<source-name>:<session-key>`:
 

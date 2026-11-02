@@ -51,10 +51,11 @@ BeeLoop parses each envelope and dispatches to an agent.
   `<beeloop-root>/runtime/sources/<source-name>/secrets.env`; the implementation
   loads it and reports missing required credentials without exposing values.
   Never expose credentials in envelopes, output, logs, state, or commits.
-- To support `input_reply`, expose `<root>/runtime/sources/<name>/<name> reply
-  --source <complete-source> --text -`. The `input_reply` MCP tool invokes it
-  with content on stdin and `BEELOOP_PYTHON` set to the gateway interpreter
-  recorded in `runtime/python`. Helpers own
-  destination authentication and report failures through their exit status.
+- Orchestrators can run source helpers with `run_script`, passing a path relative
+  to `runtime/`, an argument list, and optional stdin. Helpers stay under
+  `runtime/sources/`; shared scripts stay under `runtime/scripts/`. Python files
+  use the MCP server’s interpreter; executable wrappers inherit its environment.
+  Helpers own authentication and report results through their exit status,
+  stdout, and stderr.
 - If agent-side handling or reply guidance is needed, put it in
   `<beeloop-root>/runtime/sources/<source-name>/SKILL.md` with valid frontmatter.
