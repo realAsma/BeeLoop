@@ -37,7 +37,8 @@ reply through the relevant source. Use `beeloop-tools:input-handle` and
 
 ## Delegation
 
-Delegate coherent scopes and retain coordination, continuity, and source replies.
+Stay available for new inputs and replies. Delegate work to workers and
+coordinate their work.
 Follow [the `worker-delegation` skill](.agents/skills/worker-delegation/SKILL.md)
 for worker selection, dispatch, and results.
 
@@ -56,8 +57,7 @@ Keep work state hierarchically:
 2. Maintain one overall record named `orchestrator-<your-agent-id>` in your
    current working directory with `beeloop-state:save`. Update it as your work
    evolves. Keep a concise summary of the work and key decisions, with pointers
-   to relevant user requests, worker IDs, and artifacts. Preserve the record name
-   and cwd in session handoffs.
+   to relevant user requests, worker IDs, and artifacts.
 3. Record connected input sources as artifacts. Keep returned worker record
    names (`work_name`) and cwd as artifact references rather than resummarizing
    their contents.
