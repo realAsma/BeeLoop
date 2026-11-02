@@ -83,6 +83,7 @@ class Agent:
         stamp = now()
         agent_id = new_agent_id()
         record = {
+            **extra,
             "type": cls.__name__,
             "agent_id": agent_id,
             "role": role_name,
@@ -97,7 +98,6 @@ class Agent:
             "last_turn": None,
             "turns": 0,
             "cost_usd": 0.0,
-            **extra,
         }
         expiry_prompt = role.prompt("session_expire", session_ttl.EXPIRY_MESSAGE)
         session_ttl.arm(record, role.session_ttl, expiry_prompt)
@@ -111,7 +111,6 @@ class Agent:
                 every=role.heartbeat,
             )
         directory = agent_path(agent_id)
-        directory.mkdir(parents=True)
         role_config = role.directory / "role.toml"
         write_file(
             directory / "config.toml",

@@ -17,9 +17,9 @@ from beeloop.agents.backends.codex import CodexBackend, _argv, _render, _result
 
 def session(**kwargs) -> Session:
     base = dict(
-        agent_id="0198ff2a-0000-7000-8000-000000000000",
+        agent_id="calm-otter",
         agent_dir=Path(
-            "/tmp/runtime/agents/0198ff2a-0000-7000-8000-000000000000"
+            "/tmp/runtime/agents/calm-otter"
         ),
         session_id="f2e0f791-0000-4000-8000-000000000000",
         prepared=True,

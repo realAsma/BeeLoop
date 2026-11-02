@@ -31,7 +31,7 @@ def create_wake(
         if record.get("status") == records.CLOSED:
             raise timers.TimerError("closed agents cannot create timers")
         timer = timers.create(
-            records.new_agent_id(),
+            records.new_timer_id(),
             {"message": message},
             after=after,
             every=every,
@@ -46,7 +46,7 @@ def create_wake(
 
 def arm_recurring(record: dict[str, Any], *, message: str, every: str) -> None:
     timer = timers.create(
-        records.new_agent_id(),
+        records.new_timer_id(),
         {"message": message},
         every=every,
     )

@@ -26,6 +26,6 @@ codex plugin add beeloop-tools@beeloop-tools
 claude plugin update beeloop-tools@beeloop-tools
 ```
 
-When migrating old intake mappings, copy effective `orchestrator` entries to the
-router key (role, workspace, backend, `default` instance), preserving recipient
-IDs. Keep old entries for rollback. New deployments need no migration.
+This beta update requires fresh agent records in `runtime/agents/` and a fresh
+`runtime/routes.jsonl`. UUID agent IDs are no longer supported. Saved BeeLoop
+State is separate and can be retained.

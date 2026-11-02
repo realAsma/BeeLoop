@@ -9,6 +9,7 @@ import threading
 import time
 import tomllib
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,7 @@ def test_root_rejects_a_path_that_is_not_a_directory(monkeypatch, tmp_path):
 
 
 def test_resolving_an_agent_path_does_not_create_it():
-    missing = "0198ff2a-0000-7000-8000-000000000000"
+    missing = "missing-agent"
 
     path = records.agent_path(missing)
 
@@ -38,27 +39,54 @@ def test_resolving_an_agent_path_does_not_create_it():
     assert not path.exists()
 
 
-def test_agent_ids_are_version_7_and_ordered_by_time():
-    """uuid7 orders by its millisecond prefix, not within a millisecond.
+def test_agent_ids_are_readable_while_sessions_and_timers_remain_uuids():
+    agent = orchestrator(backend="fake")
 
-    Ids minted in the same millisecond are separated only by random bits, so the
-    guarantee to assert is that the timestamp never goes backwards -- and that
-    ids minted a millisecond apart sort.
-    """
-    minted = [records.new_agent_id() for _ in range(200)]
-    for value in minted:
-        parsed = uuid.UUID(value)
-        assert parsed.version == 7
-        assert (parsed.int >> 62) & 0b11 == 0b10  # RFC 9562 variant
+    assert re.fullmatch(r"[a-z]+-[a-z]+", agent.agent_id)
+    assert records.agent_path(agent.agent_id).is_dir()
+    assert uuid.UUID(agent.session_id).version == 4
+    assert all(uuid.UUID(timer["timer_id"]).version == 7 for timer in agent.record["timers"])
 
-    stamps = [uuid.UUID(value).int >> 80 for value in minted]
-    assert stamps == sorted(stamps)
 
-    spaced = []
-    for _ in range(5):
-        spaced.append(records.new_agent_id())
-        time.sleep(0.002)
-    assert spaced == sorted(spaced)
+def test_closed_agent_names_stay_reserved(monkeypatch):
+    monkeypatch.setattr(records.secrets, "randbelow", lambda _: 0)
+    first = worker(backend="fake")
+    first.close()
+
+    second = worker(backend="fake")
+
+    assert second.agent_id != first.agent_id
+    assert ag.restore(first.agent_id).status == records.CLOSED
+
+
+def test_parallel_creation_retries_collisions_without_overwriting(monkeypatch):
+    monkeypatch.setattr(records.secrets, "randbelow", lambda _: 0)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        agents = list(executor.map(lambda _: worker(backend="fake"), range(16)))
+
+    assert len({agent.agent_id for agent in agents}) == len(agents)
+    assert all(ag.restore(agent.agent_id).record == agent.record for agent in agents)
+
+
+def test_agent_name_exhaustion_is_bounded(monkeypatch):
+    monkeypatch.setattr(records, "_ADJECTIVES", ["calm"])
+    monkeypatch.setattr(records, "_NOUNS", ["otter", "heron"])
+    monkeypatch.setattr(records.secrets, "randbelow", lambda _: 1)
+    assert records.new_agent_id() == "calm-heron"
+    assert records.new_agent_id() == "calm-otter"
+
+    with pytest.raises(ag.AgentError, match="all 2 agent names are reserved"):
+        records.new_agent_id()
+
+
+@pytest.mark.parametrize("agent_id", [
+    "../calm-otter", "/tmp/calm-otter", "calm-otter/record.json",
+    "Calm-otter", "calm_otter", "calm-otter\n",
+    "0198ff2a-0000-7000-8000-000000000000",
+])
+def test_agent_paths_reject_invalid_and_legacy_ids(agent_id):
+    with pytest.raises(ag.AgentError, match="invalid agent ID"):
+        records.read(agent_id)
 
 
 # ----------------------------------------------------------------------- roles

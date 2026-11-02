@@ -25,7 +25,7 @@
     "uuid": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-      "description": "Lowercase hyphenated. agent_id is a v7 so a directory listing is a creation-order audit; session_id is whatever the backend minted and is opaque to everything but its adapter."
+      "description": "Lowercase hyphenated UUID used for provider sessions and timers."
     },
     "timestamp": {
       "type": "string",
@@ -40,8 +40,9 @@
       "description": "Which class runs this agent, spelled exactly as the class is named -- so this record's own schema is assets/<type>.json. The outer key is the field; the inner one is JSON Schema's keyword. Pinned at creation, so editing a role's `type` later cannot change what an existing agent already is."
     },
     "agent_id": {
-      "$ref": "#/$defs/uuid",
-      "description": "The routing key, the chat address, and the lease all at once. Unguessable because knowing an address is the permission."
+      "type": "string",
+      "pattern": "^[a-z]{2,12}-[a-z]{2,12}$",
+      "description": "The permanent adjective-noun name used to address and route to this agent. Permissions are configured separately."
     },
     "role": {
       "type": "string",
