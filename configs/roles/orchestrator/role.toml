@@ -7,8 +7,8 @@ cwd = "orchestrator"
 roles = ["*"]
 
 [session_ttl]
-idle = "1h"
-max_age = "24h"
+idle = "3d"
+max_age = "7d"
 
 [heartbeat]
 every = "4h"

@@ -67,6 +67,10 @@ do so as the final action before ending your turn.
 
 ## Event-Driven Operation
 
+If new work starts after a completed task stopped the heartbeat, follow the
+[`orchestrator-heartbeat` skill](.agents/skills/orchestrator-heartbeat/SKILL.md)
+to re-enable it before ending your turn.
+
 For work expected to take more than five minutes, arrange a BeeLoop input or
 timer to wake you, then end the turn instead of waiting.
 For background processes, Slurm jobs, or delayed checks, read and follow the

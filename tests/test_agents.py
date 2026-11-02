@@ -216,7 +216,7 @@ def test_orchestrator_role_defines_its_lifecycle_flows(beeloop_root):
 
     assert role.cwd == (beeloop_root / "orchestrator").resolve()
     assert role.session_ttl == session_ttl.Policy(
-        idle_seconds=3600, max_age_seconds=86400
+        idle_seconds=3 * 86400, max_age_seconds=7 * 86400
     )
     assert role.heartbeat == "4h"
     assert role.prompts == config["prompts"]
