@@ -7,7 +7,8 @@ description: Choose workers and send assignments using BeeLoop agent creation an
 
 1. Prefer continuing with an existing worker for related work. Give it a broad
    assignment; it can launch subagents through its native harness as needed.
-   Create another worker when a separate context would help.
+   Create another worker when a separate context would help. Use parallel
+   workers for independent work.
 2. For a new worker, call `create_agent(role="worker", cwd=...)`.
 3. Send the assignment with `message` to its agent ID using the prompt below.
    Include the optional line only when the work may be useful later.
