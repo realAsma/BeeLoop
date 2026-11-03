@@ -24,7 +24,7 @@ from .records import (
     write,
     write_file,
 )
-from .roles import Role, load_role, workspace
+from .roles import Role, load_role, parse_creation_config, workspace
 
 
 class NotResumable(AgentError):
@@ -43,6 +43,7 @@ class Agent:
         role: str | None = None,
         cwd: Path | str | None = None,
         backend: str | None = None,
+        config: dict[str, Any] | None = None,
         **extra: Any,
     ) -> None:
         if agent_id is not None and role is not None:
@@ -50,14 +51,14 @@ class Agent:
                 "pass an agent_id to continue an agent, or a role to create "
                 "one -- never both; they mean opposite things"
             )
-        if agent_id is not None and backend is not None:
+        if agent_id is not None and (backend is not None or config is not None):
             raise AgentError(
-                "pass a backend when creating an agent, not when restoring one"
+                "pass backend or config when creating an agent, not when restoring one"
             )
         if agent_id is not None:
             self.record = read(agent_id)
         elif role is not None:
-            self.record = self._allocate(role, cwd, backend, **extra)
+            self.record = self._allocate(role, cwd, backend, config, **extra)
         else:
             raise AgentError(
                 "an agent needs either an agent_id to continue or a role to create"
@@ -72,12 +73,17 @@ class Agent:
         role_name: str,
         cwd: Path | str | None,
         backend: str | None,
+        config: dict[str, Any] | None,
         **extra: Any,
     ) -> dict[str, Any]:
         role = load_role(role_name)
-        backend_name = backend or role.backend
+        config = parse_creation_config(config)
+        backend_name = backend or config.get("backend", role.backend)
         adapter = backends.get(backend_name)
+        adapter.validate_config(role.options_for(backend_name, config.get("backend_options")))
         where = workspace(role, cwd)
+        if "backend_options" in config:
+            extra["backend_options"] = config["backend_options"]
         where.mkdir(parents=True, exist_ok=True)
 
         stamp = now()
@@ -318,7 +324,7 @@ class Agent:
             prepared=self.status == PREPARED,
             cwd=self.cwd,
             permissions=self.role.permissions,
-            options=self.role.options_for(self.record["backend"]),
+            options=self.role.options_for(self.record["backend"], self.record.get("backend_options")),
         )
 
     def close(self) -> None:
@@ -357,9 +363,10 @@ def create(
     role: str,
     cwd: Path | str | None = None,
     backend: str | None = None,
+    config: dict[str, Any] | None = None,
     **extra: Any,
 ) -> Agent:
     found = load_role(role)
     return agent_class(found.type, found)(
-        role=role, cwd=cwd, backend=backend, **extra
+        role=role, cwd=cwd, backend=backend, config=config, **extra
     )

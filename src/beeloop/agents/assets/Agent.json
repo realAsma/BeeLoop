@@ -34,6 +34,11 @@
     }
   },
   "properties": {
+    "backend_options": {
+      "type": "object",
+      "additionalProperties": {"type": "object"},
+      "description": "Per-backend options chosen at creation. Each table overlays that backend's current role options without recursively merging nested values."
+    },
     "type": {
       "type": "string",
       "minLength": 1,

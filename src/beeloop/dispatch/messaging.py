@@ -36,10 +36,8 @@ class AllowedReceivers:
 
     def allows(self, role: str, agent_id: str) -> bool:
         return (
-            "*" in self.roles
-            or "*" in self.ids
-            or role in self.roles
-            or agent_id in self.ids
+            "*" in self.roles or "*" in self.ids
+            or role in self.roles or agent_id in self.ids
         )
 
     def allows_role(self, role: str) -> bool:
@@ -58,11 +56,12 @@ def create_agent(
     sender_directory: Path,
     role: str,
     cwd: str | None = None,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Authorize and create an agent without dispatching a turn."""
     _identity(sender_directory)
     allowed = _allowed_receivers(sender_directory / "config.toml")
-    created = _create(allowed, role, cwd=cwd)
+    created = _create(allowed, role, cwd=cwd, config=config)
     return {
         "agent_id": created.agent_id,
         "role": created.record["role"],
@@ -185,9 +184,7 @@ def _allowed_receivers(path: Path) -> AllowedReceivers:
 
 def _string_list(value: Any, path: Path, field: str) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise MessagingError(
-            f"{path}: allowed_receivers.{field} must be a list of strings"
-        )
+        raise MessagingError(f"{path}: allowed_receivers.{field} must be a list of strings")
     return value
 
 

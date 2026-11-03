@@ -54,23 +54,20 @@ def test_cwd_is_the_process_directory_and_never_a_flag():
     assert "--cd" not in argv
 
 
-def test_permission_profiles_compile_to_codex_flags():
-    assert "--approve-for-me" in _argv(
-        session(permissions="approve_for_me"), "hi"
-    )
-
-    read = _argv(session(permissions="read"), "hi")
-    assert read[read.index("--sandbox") + 1] == "read-only"
-
-    edit = _argv(session(permissions="edit"), "hi")
-    assert edit[edit.index("--sandbox") + 1] == "workspace-write"
-
-    assert "--dangerously-bypass-approvals-and-sandbox" in _argv(session(), "hi")
+@pytest.mark.parametrize("permissions,flags", [
+    ("read", ["--sandbox", "read-only"]),
+    ("edit", ["--sandbox", "workspace-write"]),
+    ("approve_for_me", ["--approve-for-me"]),
+    ("yolo", ["--dangerously-bypass-approvals-and-sandbox"]),
+])
+def test_permission_profiles_compile_to_codex_flags(permissions, flags):
+    assert _argv(session(permissions=permissions), "hi")[4:-1] == flags
 
 
-def test_an_unknown_permission_profile_is_refused_before_spending():
-    with pytest.raises(BackendError, match="not in this backend's catalog"):
-        _argv(session(permissions="root"), "hi")
+@pytest.mark.parametrize("permissions", ["root", "read_only", "full_access", None, []])
+def test_an_invalid_permission_profile_is_refused_before_spending(permissions):
+    with pytest.raises(BackendError, match="invalid permission profile"):
+        _argv(session(permissions=permissions), "hi")
 
 
 def test_model_is_replayed_on_fresh_and_resumed_turns():

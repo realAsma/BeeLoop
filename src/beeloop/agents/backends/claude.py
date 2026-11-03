@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 import uuid
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 from .base import (
     Backend,
@@ -40,6 +40,9 @@ class ClaudeBackend(Backend):
     name = "claude_code"
     # Concurrent resumes can interleave branches in one session transcript.
     delivery_mode = "serial"
+
+    def validate_config(self, options: Mapping[str, Any]) -> None:
+        _model_args(options)
 
     def open(self) -> str:
         """Reserve a UUID without process, network, or model work.
@@ -100,14 +103,6 @@ def _argv(session: Session, prompt: str) -> list[str]:
     directory, not a flag. Only session, profile, and model require flags; agent
     identity travels in deliver's environment.
     """
-    mode = _PROFILES.get(session.permissions)
-    if mode is None:
-        raise BackendError(
-            f"permission profile {session.permissions!r} is not in this "
-            f"backend's catalog; use one of "
-            f"{', '.join(sorted(_PROFILES))}, or add it to _PROFILES."
-        )
-
     argv = [
         _binary(),
         "-p",
@@ -115,7 +110,7 @@ def _argv(session: Session, prompt: str) -> list[str]:
         "--output-format",
         "json",
         "--permission-mode",
-        mode,
+        _PROFILES[session.permissions],
     ]
     # Reusing a live ID via --session-id silently forks its conversation.
     argv += (
@@ -123,9 +118,17 @@ def _argv(session: Session, prompt: str) -> list[str]:
         if session.prepared
         else ["--resume", session.session_id]
     )
-    if model := session.options.get("model"):
-        argv += ["--model", str(model)]
+    argv += _model_args(session.options)
     return argv
+
+
+def _model_args(options: Mapping[str, Any]) -> list[str]:
+    if "model" not in options:
+        return []
+    model = options["model"]
+    if not isinstance(model, str) or not model:
+        raise BackendError("Claude model must be a non-empty string")
+    return ["--model", model]
 
 
 def _binary() -> str:

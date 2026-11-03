@@ -5,6 +5,7 @@
 
 !/src/**
 !/tests/test_gateway.py
+!/tests/test_agent_config.py
 !/orchestrator/**
 !/router/**
 !/configs/**

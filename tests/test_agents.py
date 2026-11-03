@@ -123,7 +123,7 @@ def test_an_empty_directory_is_a_working_role(beeloop_root):
 
     role = ag.load_role("empty")
     assert role.backend == roles.DEFAULT_BACKEND
-    assert role.permissions == roles.DEFAULT_PERMISSIONS
+    assert role.permissions == "yolo"
     assert role.cwd is None
     assert role.options == {}
 
