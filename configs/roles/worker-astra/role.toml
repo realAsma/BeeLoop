@@ -1,0 +1,8 @@
+backend = "codex"
+permissions = "approve_for_me"
+
+[backend_options.codex]
+model = "gpt-6-astra"
+
+[allowed_receivers]
+roles = ["orchestrator", "worker-astra"]
