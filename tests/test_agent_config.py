@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 
 import pytest
@@ -15,10 +16,39 @@ from beeloop.dispatch import messaging
 from tests.conftest import make_role
 
 
+@pytest.mark.parametrize("backend", ["fake", "codex", "claude_code"])
+@pytest.mark.parametrize("permissions", ["read_only", "approve_for_me", "full_access"])
+def test_shared_profiles_persist_with_runtime_config(backend, permissions):
+    agent = ag.create("worker", cwd="project", config={
+        "backend": backend, "permissions": permissions,
+    })
+    assert agent.session().permissions == permissions
+    assert ag.restore(agent.agent_id).session().permissions == permissions
+
+
+@pytest.mark.parametrize("backend", ["fake", "codex", "claude_code"])
+@pytest.mark.parametrize("permissions", ["read", "edit", "yolo", "root"])
+@pytest.mark.parametrize("source", ["role", "config"])
+def test_invalid_profiles_fail_for_all_backends_before_allocation(
+    backend, permissions, source, beeloop_root, monkeypatch,
+):
+    config = {"backend": backend, "permissions": permissions}
+    if source == "role":
+        make_role(beeloop_root, "worker", '\n'.join(
+            f"{key} = {json.dumps(value)}" for key, value in config.items()
+        ))
+        config = None
+    monkeypatch.setattr(agent_module, "new_agent_id", lambda *_: pytest.fail("allocated an agent"))
+    with pytest.raises(BackendError, match="invalid permission profile"):
+        ag.create("worker", cwd="must-not-exist", config=config)
+    assert not (records.root() / "must-not-exist").exists()
+    assert not list((records.root() / "runtime/agents").glob("*"))
+
+
 def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root):
     directory = make_role(
         beeloop_root, "configured",
-        'backend = "fake"\ncwd = "default-work"\npermissions = "read"\n'
+        'backend = "fake"\ncwd = "default-work"\npermissions = "read_only"\n'
         '[backend_options.fake]\nmarker = "default"\n'
         '[backend_options.fake.config]\nkeep = true\nvalues = ["old"]\n'
         '[prompts]\nsession_init = "default init"\ncustom = "keep"\n'
@@ -26,7 +56,7 @@ def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root)
     )
     original = (directory / "role.toml").read_bytes()
     config = {
-        "cwd": "config-work", "permissions": "edit", "instance": "experiment",
+        "cwd": "config-work", "permissions": "approve_for_me", "instance": "experiment",
         "backend_options": {"fake": {"config": {"values": ["new"]}}},
         "prompts": {"session_init": "custom init"},
         "allowed_receivers": {"roles": ["worker"]},
@@ -37,7 +67,7 @@ def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root)
     other = ag.create("configured")
 
     assert agent.cwd == beeloop_root / "caller-work"
-    assert agent.session().permissions == "edit"
+    assert agent.session().permissions == "approve_for_me"
     assert agent.session().options == {"marker": "default", "config": {"keep": True, "values": ["new"]}}
     assert agent.role.prompts == {"session_init": "custom init", "custom": "keep"}
     assert agent.record["config"] == requested
@@ -47,11 +77,11 @@ def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root)
     assert allowed.roles == {"worker"}
     assert allowed.ids == {"original"}
     assert other.session().options["config"]["values"] == ["old"]
-    assert other.session().permissions == "read"
+    assert other.session().permissions == "read_only"
     assert (directory / "role.toml").read_bytes() == original
 
     (directory / "role.toml").write_text(
-        'backend = "codex"\ncwd = "new-default"\npermissions = "read"\n'
+        'backend = "codex"\ncwd = "new-default"\npermissions = "read_only"\n'
         '[backend_options.fake]\nmarker = "refreshed"\n'
         '[backend_options.fake.config]\nkeep = false\nvalues = ["later"]\n'
         '[prompts]\ncustom = "refreshed hook"\n',
@@ -59,7 +89,7 @@ def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root)
     restored = ag.restore(agent.agent_id)
     assert restored.record["backend"] == "fake"
     assert restored.cwd == agent.cwd
-    assert restored.session().permissions == "edit"
+    assert restored.session().permissions == "approve_for_me"
     assert restored.session().options == {"marker": "refreshed", "config": {"keep": False, "values": ["new"]}}
     assert restored.role.prompts == {"session_init": "custom init", "custom": "refreshed hook"}
     assert messaging._allowed_receivers(records.agent_path(agent.agent_id) / "config.toml") == allowed
@@ -68,7 +98,7 @@ def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root)
 def test_backend_and_native_options_reach_fresh_and_resumed_codex_argv(monkeypatch):
     monkeypatch.setenv("BEELOOP_CODEX_BIN", "/unused/codex")
     config = {
-        "backend": "codex", "permissions": "read",
+        "backend": "codex", "permissions": "read_only",
         "backend_options": {"codex": {"model": "gpt-6-astra", "config": {"feature": ["a", "b"]}}},
     }
     agent = ag.create("worker", cwd="project", config=config)
@@ -85,7 +115,7 @@ def test_backend_and_native_options_reach_fresh_and_resumed_codex_argv(monkeypat
 
 def test_ttl_heartbeat_and_prompts_survive_dormancy_and_fresh_session(monkeypatch):
     config = {
-        "backend": "fake", "permissions": "edit",
+        "backend": "fake", "permissions": "approve_for_me",
         "backend_options": {"fake": {"marker": "retained"}},
         "session_ttl": {"idle": "1h"}, "heartbeat": {"every": "2h"},
         "prompts": {"session_init": "initialize", "session_expire": "save",
@@ -109,7 +139,7 @@ def test_ttl_heartbeat_and_prompts_survive_dormancy_and_fresh_session(monkeypatc
     agent.spin([InputItem("user", "continue")])
     assert agent.session_id != old_session
     assert agent.session().options == {"marker": "retained"}
-    assert agent.session().permissions == "edit"
+    assert agent.session().permissions == "approve_for_me"
     assert fake.turns(agent.agent_id)[-1][0][1].startswith("restore\n\nPrevious session handoff:")
     assert any(session_ttl.is_expiry_timer(timer) for timer in agent_timers.list_wakes(agent.agent_id))
 

@@ -30,9 +30,8 @@ _ARCHIVED_SESSION = re.compile(
 _MISSING_ROLLOUT = re.compile(r"\bno rollout found for thread id \S+\b")
 _PROFILES = {
     "approve_for_me": ["--approve-for-me"],
-    "edit": ["--sandbox", "workspace-write"],
-    "read": ["--sandbox", "read-only"],
-    "yolo": ["--dangerously-bypass-approvals-and-sandbox"],
+    "read_only": ["--sandbox", "read-only"],
+    "full_access": ["--dangerously-bypass-approvals-and-sandbox"],
 }
 
 
@@ -40,8 +39,7 @@ class CodexBackend(Backend):
     name = "codex"
     delivery_mode = "serial"
 
-    def validate_config(self, permissions: str, options: Mapping[str, Any]) -> None:
-        _profile(permissions)
+    def validate_config(self, options: Mapping[str, Any]) -> None:
         _option_args(options)
 
     def open(self) -> str:
@@ -104,23 +102,12 @@ def _session_unavailable(message: str) -> bool:
 
 
 def _argv(session: Session, prompt: str) -> list[str]:
-    argv = [_binary(), "exec", "--json", "--skip-git-repo-check", *_profile(session.permissions)]
+    argv = [_binary(), "exec", "--json", "--skip-git-repo-check", *_PROFILES[session.permissions]]
     argv += _option_args(session.options)
     if not session.prepared:
         argv += ["resume", session.session_id]
     argv.append(prompt)
     return argv
-
-
-def _profile(permissions: str) -> list[str]:
-    profile = _PROFILES.get(permissions)
-    if profile is None:
-        raise BackendError(
-            f"permission profile {permissions!r} is not in this "
-            f"backend's catalog; use one of "
-            f"{', '.join(sorted(_PROFILES))}, or add it to _PROFILES."
-        )
-    return profile
 
 
 def _option_args(options: Mapping[str, Any]) -> list[str]:

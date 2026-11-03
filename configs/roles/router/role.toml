@@ -1,5 +1,5 @@
 backend = "codex"
-permissions = "read"
+permissions = "read_only"
 cwd = "router"
 
 [backend_options.codex]

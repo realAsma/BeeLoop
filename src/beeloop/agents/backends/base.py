@@ -16,6 +16,16 @@ class BackendError(RuntimeError):
     """Anything an adapter refuses or cannot make sense of."""
 
 
+def validate_permissions(value: Any) -> str:
+    """Validate the permission profiles shared by all BeeLoop backends."""
+    profiles = ("read_only", "approve_for_me", "full_access")
+    if not isinstance(value, str) or value not in profiles:
+        raise BackendError(
+            f"invalid permission profile {value!r}; use one of {', '.join(profiles)}"
+        )
+    return value
+
+
 # ----------------------------------------------------------------- the bundles
 
 
@@ -64,8 +74,11 @@ class Session:
     # Delegation fixes the worker's directory in its record. Do not infer it
     # from role defaults or the provider's last invocation.
     cwd: Path
-    permissions: str  # Named role profile; the adapter owns its catalog.
+    permissions: str  # Shared profile; adapters map it to native flags.
     options: Mapping[str, Any] = field(default_factory=dict)  # role, opaque
+
+    def __post_init__(self) -> None:
+        validate_permissions(self.permissions)
 
 
 @dataclass
@@ -91,8 +104,8 @@ class Backend(ABC):
     name: ClassVar[str]
     delivery_mode: ClassVar[DeliveryMode]
 
-    def validate_config(self, permissions: str, options: Mapping[str, Any]) -> None:
-        """Validate adapter-specific creation settings without opening a session."""
+    def validate_config(self, options: Mapping[str, Any]) -> None:
+        """Validate adapter-specific options without opening a session."""
 
     @abstractmethod
     def open(self) -> str:

@@ -13,10 +13,11 @@ from beeloop import timers
 
 from . import backends
 from . import session_ttl
+from .backends.base import validate_permissions
 from .records import AgentError, agent_path, read, root
 
 DEFAULT_BACKEND = backends.DEFAULT
-DEFAULT_PERMISSIONS = "yolo"
+DEFAULT_PERMISSIONS = "full_access"
 DEFAULT_TYPE = "Agent"
 CONFIG_FIELDS = frozenset({
     "type", "backend", "permissions", "cwd", "backend_options", "session_ttl",
@@ -101,7 +102,7 @@ def parse_role(directory: Path, config: Mapping[str, Any]) -> Role:
     """Apply the same role contract to file defaults and merged overrides."""
     if unknown := config.keys() - CONFIG_FIELDS:
         raise RoleConfigError(f"unknown config field(s): {', '.join(sorted(unknown))}")
-    for name in ("type", "backend", "permissions"):
+    for name in ("type", "backend"):
         if name in config and (not isinstance(config[name], str) or not config[name]):
             raise RoleConfigError(f"{name} must be a non-empty string")
     cwd = config.get("cwd")
@@ -109,15 +110,15 @@ def parse_role(directory: Path, config: Mapping[str, Any]) -> Role:
         raise RoleConfigError("cwd must be a non-empty string or null")
     backend = config.get("backend", DEFAULT_BACKEND)
     adapter = backends.get(backend)
-    permissions = config.get("permissions", DEFAULT_PERMISSIONS)
+    permissions = validate_permissions(config.get("permissions", DEFAULT_PERMISSIONS))
     options = config.get("backend_options", {})
     if not isinstance(options, Mapping):
         raise RoleConfigError("backend_options must be a table")
     for name, values in options.items():
         if not isinstance(values, Mapping):
             raise RoleConfigError(f"backend_options.{name} must be a table")
-        backends.get(name).validate_config(permissions, values)
-    adapter.validate_config(permissions, options.get(backend, {}))
+        backends.get(name).validate_config(values)
+    adapter.validate_config(options.get(backend, {}))
     return Role(
         directory=directory,
         type=config.get("type", DEFAULT_TYPE),

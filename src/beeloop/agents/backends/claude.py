@@ -30,9 +30,8 @@ _NO_SESSION = "No conversation found with session ID"
 # demonstrated end to end.
 _PROFILES = {
     "approve_for_me": "auto",
-    "yolo": "bypassPermissions",
-    "edit": "acceptEdits",
-    "read": "plan",
+    "full_access": "bypassPermissions",
+    "read_only": "plan",
 }
 
 
@@ -41,8 +40,7 @@ class ClaudeBackend(Backend):
     # Concurrent resumes can interleave branches in one session transcript.
     delivery_mode = "serial"
 
-    def validate_config(self, permissions: str, options: Mapping[str, Any]) -> None:
-        _permission_mode(permissions)
+    def validate_config(self, options: Mapping[str, Any]) -> None:
         _model_args(options)
 
     def open(self) -> str:
@@ -111,7 +109,7 @@ def _argv(session: Session, prompt: str) -> list[str]:
         "--output-format",
         "json",
         "--permission-mode",
-        _permission_mode(session.permissions),
+        _PROFILES[session.permissions],
     ]
     # Reusing a live ID via --session-id silently forks its conversation.
     argv += (
@@ -121,17 +119,6 @@ def _argv(session: Session, prompt: str) -> list[str]:
     )
     argv += _model_args(session.options)
     return argv
-
-
-def _permission_mode(permissions: str) -> str:
-    mode = _PROFILES.get(permissions)
-    if mode is None:
-        raise BackendError(
-            f"permission profile {permissions!r} is not in this "
-            f"backend's catalog; use one of "
-            f"{', '.join(sorted(_PROFILES))}, or add it to _PROFILES."
-        )
-    return mode
 
 
 def _model_args(options: Mapping[str, Any]) -> list[str]:

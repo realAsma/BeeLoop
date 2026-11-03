@@ -79,7 +79,7 @@ class Agent:
         role = load_role(role_name, config)
         backend_name = backend or role.backend
         adapter = backends.get(backend_name)
-        adapter.validate_config(role.permissions, role.options_for(backend_name))
+        adapter.validate_config(role.options_for(backend_name))
         where = workspace(role, cwd)
         if config is not None:
             extra["config"] = merge_config({}, config)
