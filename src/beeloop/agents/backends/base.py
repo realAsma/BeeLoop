@@ -18,7 +18,7 @@ class BackendError(RuntimeError):
 
 def validate_permissions(value: Any) -> str:
     """Validate the permission profiles shared by all BeeLoop backends."""
-    profiles = ("read_only", "approve_for_me", "full_access")
+    profiles = ("read", "edit", "approve_for_me", "yolo")
     if not isinstance(value, str) or value not in profiles:
         raise BackendError(
             f"invalid permission profile {value!r}; use one of {', '.join(profiles)}"

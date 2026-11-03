@@ -24,7 +24,7 @@ def session(**kwargs) -> Session:
         session_id="f2e0f791-0000-4000-8000-000000000000",
         prepared=True,
         cwd=Path("/tmp"),
-        permissions="full_access",
+        permissions="yolo",
         options={},
     )
     base.update(kwargs)
@@ -55,15 +55,16 @@ def test_cwd_is_the_process_directory_and_never_a_flag():
 
 
 @pytest.mark.parametrize("permissions,flags", [
-    ("read_only", ["--sandbox", "read-only"]),
+    ("read", ["--sandbox", "read-only"]),
+    ("edit", ["--sandbox", "workspace-write"]),
     ("approve_for_me", ["--approve-for-me"]),
-    ("full_access", ["--dangerously-bypass-approvals-and-sandbox"]),
+    ("yolo", ["--dangerously-bypass-approvals-and-sandbox"]),
 ])
 def test_permission_profiles_compile_to_codex_flags(permissions, flags):
     assert _argv(session(permissions=permissions), "hi")[4:-1] == flags
 
 
-@pytest.mark.parametrize("permissions", ["root", "read", "edit", "yolo", None, []])
+@pytest.mark.parametrize("permissions", ["root", "read_only", "full_access", None, []])
 def test_an_invalid_permission_profile_is_refused_before_spending(permissions):
     with pytest.raises(BackendError, match="invalid permission profile"):
         _argv(session(permissions=permissions), "hi")
@@ -84,7 +85,7 @@ def test_role_config_overrides_are_valid_toml_on_every_turn(prepared):
         "timeout": 30,
         "unicode": "Instructions 🐝",
     }
-    argv = _argv(session(prepared=prepared, permissions="read_only", options={"config": overrides}), "hi")
+    argv = _argv(session(prepared=prepared, permissions="read", options={"config": overrides}), "hi")
     supplied = [argv[index + 1] for index, value in enumerate(argv) if value == "-c"]
     for key, value in zip(overrides, supplied):
         prefix, _, encoded = value.partition("=")

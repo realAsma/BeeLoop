@@ -67,7 +67,7 @@ def test_router_rotates_after_three_weeks_without_idle_expiry_or_heartbeat(monke
     since = timers.parse_timestamp(router.record["session_since"])
     assert router.ttl_policy == session_ttl.Policy(max_age_seconds=21 * 86400)
     assert router.role.heartbeat is None
-    assert router.session().permissions == "read_only"
+    assert router.session().permissions == "read"
     assert agent_timers.list_wakes(agent_id) == [ttl_timer(router)]
     deadline = timers.timestamp(since + dt.timedelta(days=21))
     assert ttl_timer(router).due_at == deadline

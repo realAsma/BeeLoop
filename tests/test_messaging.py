@@ -343,7 +343,7 @@ def test_live_config_tool_validates_then_creates_without_dispatch():
                 assert reason in invalid.content[0].text
             created = await session.call_tool("create_agent", {
                 "role": "worker", "cwd": "project",
-                "config": {"backend": "fake", "permissions": "read_only", "backend_options": {"fake": {"marker": "chosen"}}},
+                "config": {"backend": "fake", "permissions": "read", "backend_options": {"fake": {"marker": "chosen"}}},
             })
             assert not created.is_error
             return created.structured_content["agent_id"]
@@ -351,7 +351,7 @@ def test_live_config_tool_validates_then_creates_without_dispatch():
     worker_id = asyncio.run(inspect_config())
     created = ag.restore(worker_id)
     assert created.session().options == {"marker": "chosen"}
-    assert created.session().permissions == "read_only"
+    assert created.session().permissions == "read"
     assert created.record["turns"] == 0
     assert fake.turns(worker_id) == []
     assert not (records.root() / "rejected").exists()

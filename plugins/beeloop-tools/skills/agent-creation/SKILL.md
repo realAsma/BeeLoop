@@ -32,8 +32,8 @@ Tables merge recursively; lists and scalars replace defaults. Set `cwd`,
 clears default prompts. A blank prompt disables that hook. Caller `cwd` wins
 over both config and role defaults. Backend options retain their native shape.
 
-`permissions` uses the same three profiles for every backend: `read_only`,
-`approve_for_me`, or `full_access`. The default permission profile is `full_access`.
+`permissions` uses the same four profiles for every backend: `read`, `edit`,
+`approve_for_me`, or `yolo`. The default permission profile is `yolo`.
 
 Overrides persist across turns and session expiry. Type, backend, and cwd are
 fixed at creation. Unoverridden runtime settings still follow the role; TTL and

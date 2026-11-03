@@ -30,8 +30,9 @@ _NO_SESSION = "No conversation found with session ID"
 # demonstrated end to end.
 _PROFILES = {
     "approve_for_me": "auto",
-    "full_access": "bypassPermissions",
-    "read_only": "plan",
+    "yolo": "bypassPermissions",
+    "edit": "acceptEdits",
+    "read": "plan",
 }
 
 

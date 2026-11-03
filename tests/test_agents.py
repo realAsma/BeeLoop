@@ -123,7 +123,7 @@ def test_an_empty_directory_is_a_working_role(beeloop_root):
 
     role = ag.load_role("empty")
     assert role.backend == roles.DEFAULT_BACKEND
-    assert role.permissions == "full_access"
+    assert role.permissions == "yolo"
     assert role.cwd is None
     assert role.options == {}
 
@@ -132,9 +132,9 @@ def test_an_empty_directory_is_a_working_role(beeloop_root):
     ("name", "backend", "permissions", "cwd"),
     [
         ("orchestrator", "codex", "approve_for_me", "orchestrator"),
-        ("router", "codex", "read_only", "router"),
+        ("router", "codex", "read", "router"),
         ("worker", "claude_code", "approve_for_me", None),
-        ("planner", "claude_code", "read_only", None),
+        ("planner", "claude_code", "read", None),
     ],
 )
 def test_checked_in_roles_select_their_backend_and_permissions(
@@ -195,9 +195,9 @@ def test_editing_a_role_reaches_an_agent_that_already_exists(beeloop_root):
     assert agent.session().permissions == "approve_for_me"
 
     toml = beeloop_root / "configs" / "roles" / "orchestrator" / "role.toml"
-    toml.write_text('backend = "fake"\npermissions = "read_only"\n', encoding="utf-8")
+    toml.write_text('backend = "fake"\npermissions = "read"\n', encoding="utf-8")
 
-    assert ag.restore(agent.agent_id).session().permissions == "read_only"
+    assert ag.restore(agent.agent_id).session().permissions == "read"
 
 
 def test_a_broken_role_config_names_the_file_instead_of_leaking_a_parse_error(beeloop_root):
@@ -345,7 +345,7 @@ def test_an_agent_owns_its_record_and_a_snapshot_of_its_role_config(beeloop_root
     assert records.queue_path(agent.agent_id) == directory / "queue.jsonl"
     assert (directory / "config.toml").read_text("utf-8") == copied_config
 
-    role_config.write_text('permissions = "read_only"\n', encoding="utf-8")
+    role_config.write_text('permissions = "read"\n', encoding="utf-8")
     assert (directory / "config.toml").read_text("utf-8") == copied_config
 
 

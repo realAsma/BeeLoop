@@ -17,7 +17,7 @@ from .backends.base import validate_permissions
 from .records import AgentError, agent_path, read, root
 
 DEFAULT_BACKEND = backends.DEFAULT
-DEFAULT_PERMISSIONS = "full_access"
+DEFAULT_PERMISSIONS = "yolo"
 DEFAULT_TYPE = "Agent"
 CONFIG_FIELDS = frozenset({
     "type", "backend", "permissions", "cwd", "backend_options", "session_ttl",

@@ -17,7 +17,7 @@ from tests.conftest import make_role
 
 
 @pytest.mark.parametrize("backend", ["fake", "codex", "claude_code"])
-@pytest.mark.parametrize("permissions", ["read_only", "approve_for_me", "full_access"])
+@pytest.mark.parametrize("permissions", ["read", "edit", "approve_for_me", "yolo"])
 def test_shared_profiles_persist_with_runtime_config(backend, permissions):
     agent = ag.create("worker", cwd="project", config={
         "backend": backend, "permissions": permissions,
@@ -27,7 +27,7 @@ def test_shared_profiles_persist_with_runtime_config(backend, permissions):
 
 
 @pytest.mark.parametrize("backend", ["fake", "codex", "claude_code"])
-@pytest.mark.parametrize("permissions", ["read", "edit", "yolo", "root"])
+@pytest.mark.parametrize("permissions", ["read_only", "full_access", "root"])
 @pytest.mark.parametrize("source", ["role", "config"])
 def test_invalid_profiles_fail_for_all_backends_before_allocation(
     backend, permissions, source, beeloop_root, monkeypatch,
@@ -48,7 +48,7 @@ def test_invalid_profiles_fail_for_all_backends_before_allocation(
 def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root):
     directory = make_role(
         beeloop_root, "configured",
-        'backend = "fake"\ncwd = "default-work"\npermissions = "read_only"\n'
+        'backend = "fake"\ncwd = "default-work"\npermissions = "read"\n'
         '[backend_options.fake]\nmarker = "default"\n'
         '[backend_options.fake.config]\nkeep = true\nvalues = ["old"]\n'
         '[prompts]\nsession_init = "default init"\ncustom = "keep"\n'
@@ -77,11 +77,11 @@ def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root)
     assert allowed.roles == {"worker"}
     assert allowed.ids == {"original"}
     assert other.session().options["config"]["values"] == ["old"]
-    assert other.session().permissions == "read_only"
+    assert other.session().permissions == "read"
     assert (directory / "role.toml").read_bytes() == original
 
     (directory / "role.toml").write_text(
-        'backend = "codex"\ncwd = "new-default"\npermissions = "read_only"\n'
+        'backend = "codex"\ncwd = "new-default"\npermissions = "read"\n'
         '[backend_options.fake]\nmarker = "refreshed"\n'
         '[backend_options.fake.config]\nkeep = false\nvalues = ["later"]\n'
         '[prompts]\ncustom = "refreshed hook"\n',
@@ -98,7 +98,7 @@ def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root)
 def test_backend_and_native_options_reach_fresh_and_resumed_codex_argv(monkeypatch):
     monkeypatch.setenv("BEELOOP_CODEX_BIN", "/unused/codex")
     config = {
-        "backend": "codex", "permissions": "read_only",
+        "backend": "codex", "permissions": "read",
         "backend_options": {"codex": {"model": "gpt-6-astra", "config": {"feature": ["a", "b"]}}},
     }
     agent = ag.create("worker", cwd="project", config=config)

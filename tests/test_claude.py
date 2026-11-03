@@ -23,7 +23,7 @@ def session(**kwargs) -> Session:
         session_id="f2e0f791-0000-4000-8000-000000000000",
         prepared=True,
         cwd=Path("/tmp"),
-        permissions="full_access",
+        permissions="yolo",
         options={},
     )
     base.update(kwargs)
@@ -95,7 +95,7 @@ def test_deliver_binds_the_child_to_this_agents_own_directory(monkeypatch):
     assert spawned["env"]["PATH"] == os.environ["PATH"]
 
 
-@pytest.mark.parametrize("permissions", ["root", "read", "edit", "yolo", None, []])
+@pytest.mark.parametrize("permissions", ["root", "read_only", "full_access", None, []])
 def test_an_invalid_permission_profile_is_refused_before_spending(permissions):
     with pytest.raises(BackendError, match="invalid permission profile"):
         _argv(session(permissions=permissions), "hi")
@@ -103,7 +103,7 @@ def test_an_invalid_permission_profile_is_refused_before_spending(permissions):
 
 @pytest.mark.parametrize(
     ("permissions", "mode"),
-    [("approve_for_me", "auto"), ("read_only", "plan"), ("full_access", "bypassPermissions")],
+    [("approve_for_me", "auto"), ("read", "plan"), ("edit", "acceptEdits"), ("yolo", "bypassPermissions")],
 )
 def test_the_profile_compiles_to_the_tools_own_enum(permissions, mode):
     argv = _argv(session(permissions=permissions), "hi")
