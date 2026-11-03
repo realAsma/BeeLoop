@@ -85,13 +85,9 @@ def create_agent(
 ) -> dict[str, str]:
     """Create an authorized agent without starting its first model turn.
 
-    Only bound orchestrators may provide config overrides for role defaults.
-    Tables merge recursively; lists replace defaults. Caller cwd wins.
+    Config accepts only backend and backend_options; role policies still apply.
     """
-    directory = _agent_directory()
-    if config is not None:
-        messaging.require_orchestrator(directory)
-    return messaging.create_agent(directory, role, cwd, config)
+    return messaging.create_agent(_agent_directory(), role, cwd, config)
 
 
 @_tool

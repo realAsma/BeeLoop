@@ -7,8 +7,12 @@ description: Create BeeLoop agents with create_agent, or configure reusable role
 
 Agent creation requires a harness-bound caller.
 
-1. Call `get_beeloop_root()` and reuse `<root>/configs/roles/<role>/` if it
-   exists; otherwise create it.
+Use existing role definitions when possible. Only orchestrators should create
+new role definitions when needed; other agents should ask their orchestrator.
+Any harness-bound caller may create agent instances from roles they are
+authorized to create.
+
+1. Call `get_beeloop_root()` to locate `<root>/configs/roles/<role>/`.
    Preserve existing role files unless the request requires changes.
 2. Add `role.toml` only for needed defaults or policies. Use TOML. Its `cwd`
    is a default; caller input overrides it.
@@ -17,26 +21,22 @@ Agent creation requires a harness-bound caller.
 
 ## Per-agent configuration
 
-Only a bound orchestrator may pass the optional `config` object to override
-role defaults for one agent. Other callers may create permitted roles using
-their defaults. Role creation permissions still apply.
+Any harness-bound caller may pass optional `config` settings when creating an
+existing role they are authorized to create.
 
 ```text
 create_agent(role="worker", cwd="workspaces/project", config={"backend": "codex", "backend_options": {"codex": {"model": "gpt-6-astra"}}})
 ```
 
-`config` accepts the role fields `type`, `backend`, `permissions`, `cwd`,
-`backend_options`, `session_ttl`, `heartbeat`, `prompts`, and `allowed_receivers`.
-Tables merge recursively; lists and scalars replace defaults. Set `cwd`,
-`session_ttl`, or `heartbeat` to null to disable that default; `prompts: null`
-clears default prompts. A blank prompt disables that hook. Caller `cwd` wins
-over both config and role defaults. Backend options retain their native shape.
+`config` accepts only `backend` and `backend_options`. Each backend's option
+table overlays its role defaults; an explicit nested value replaces the whole
+value without recursive merging. Backend options retain their native shape.
+Pass the existing `cwd` argument to override the role's default workspace.
 
 `permissions` uses the same four profiles for every backend: `read`, `edit`,
 `approve_for_me`, or `yolo`. The default permission profile is `yolo`.
 
-Overrides persist across turns and session expiry. Type, backend, and cwd are
-fixed at creation. Unoverridden runtime settings still follow the role; TTL and
-receiver policies use the agent's role snapshot with its overrides applied.
-Optional `instance` records existing creation metadata; it does not create a
-source route. Internal IDs, status, counters, and timers are not config fields.
+The selected backend and explicit options persist across turns and session
+expiry. Unspecified options still follow the role. Type, permissions, prompts,
+TTL, heartbeat, and receiver policy come from the role and cannot be supplied
+through creation config.

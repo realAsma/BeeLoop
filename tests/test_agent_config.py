@@ -1,8 +1,7 @@
-"""Per-agent role overrides share validation and survive session changes."""
+"""Backend-only creation settings preserve role policies across sessions."""
 
 from __future__ import annotations
 
-import json
 from copy import deepcopy
 
 import pytest
@@ -12,15 +11,17 @@ from beeloop.agents import agent as agent_module, backends, records, session_ttl
 from beeloop.agents import timers as agent_timers
 from beeloop.agents.backends import BackendError, InputItem, fake
 from beeloop.agents.backends.codex import _argv
+from beeloop.agents.roles import RoleConfigError
 from beeloop.dispatch import messaging
 from tests.conftest import make_role
 
 
 @pytest.mark.parametrize("backend", ["fake", "codex", "claude_code"])
 @pytest.mark.parametrize("permissions", ["read", "edit", "approve_for_me", "yolo"])
-def test_shared_profiles_persist_with_runtime_config(backend, permissions):
+def test_shared_profiles_remain_role_owned(backend, permissions, beeloop_root):
+    make_role(beeloop_root, "worker", f'permissions = "{permissions}"\n')
     agent = ag.create("worker", cwd="project", config={
-        "backend": backend, "permissions": permissions,
+        "backend": backend,
     })
     assert agent.session().permissions == permissions
     assert ag.restore(agent.agent_id).session().permissions == permissions
@@ -28,24 +29,17 @@ def test_shared_profiles_persist_with_runtime_config(backend, permissions):
 
 @pytest.mark.parametrize("backend", ["fake", "codex", "claude_code"])
 @pytest.mark.parametrize("permissions", ["read_only", "full_access", "root"])
-@pytest.mark.parametrize("source", ["role", "config"])
-def test_invalid_profiles_fail_for_all_backends_before_allocation(
-    backend, permissions, source, beeloop_root, monkeypatch,
+def test_invalid_role_profiles_fail_before_allocation(
+    backend, permissions, beeloop_root, monkeypatch,
 ):
-    config = {"backend": backend, "permissions": permissions}
-    if source == "role":
-        make_role(beeloop_root, "worker", '\n'.join(
-            f"{key} = {json.dumps(value)}" for key, value in config.items()
-        ))
-        config = None
+    make_role(beeloop_root, "worker", f'backend = "{backend}"\npermissions = "{permissions}"\n')
     monkeypatch.setattr(agent_module, "new_agent_id", lambda *_: pytest.fail("allocated an agent"))
     with pytest.raises(BackendError, match="invalid permission profile"):
-        ag.create("worker", cwd="must-not-exist", config=config)
+        ag.create("worker", cwd="must-not-exist")
     assert not (records.root() / "must-not-exist").exists()
-    assert not list((records.root() / "runtime/agents").glob("*"))
 
 
-def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root):
+def test_backend_options_overlay_without_mutating_role_or_other_agents(beeloop_root):
     directory = make_role(
         beeloop_root, "configured",
         'backend = "fake"\ncwd = "default-work"\npermissions = "read"\n'
@@ -55,33 +49,26 @@ def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root)
         '[allowed_receivers]\nroles = ["orchestrator"]\nids = ["original"]\n',
     )
     original = (directory / "role.toml").read_bytes()
-    config = {
-        "cwd": "config-work", "permissions": "approve_for_me", "instance": "experiment",
-        "backend_options": {"fake": {"config": {"values": ["new"]}}},
-        "prompts": {"session_init": "custom init"},
-        "allowed_receivers": {"roles": ["worker"]},
-    }
+    config = {"backend_options": {"fake": {"config": {"values": ["new"]}}}}
     requested = deepcopy(config)
     agent = ag.create("configured", cwd="caller-work", config=config)
     config["backend_options"]["fake"]["config"]["values"].append("mutation")
     other = ag.create("configured")
 
     assert agent.cwd == beeloop_root / "caller-work"
-    assert agent.session().permissions == "approve_for_me"
-    assert agent.session().options == {"marker": "default", "config": {"keep": True, "values": ["new"]}}
-    assert agent.role.prompts == {"session_init": "custom init", "custom": "keep"}
-    assert agent.record["config"] == requested
-    assert agent.record["instance"] == "experiment"
-    assert not (beeloop_root / "runtime/routes.jsonl").exists()
+    assert agent.session().permissions == "read"
+    assert agent.session().options == {"marker": "default", "config": {"values": ["new"]}}
+    assert agent.role.prompts == {"session_init": "default init", "custom": "keep"}
+    assert agent.record["backend_options"] == requested["backend_options"]
     allowed = messaging._allowed_receivers(records.agent_path(agent.agent_id) / "config.toml")
-    assert allowed.roles == {"worker"}
+    assert allowed.roles == {"orchestrator"}
     assert allowed.ids == {"original"}
     assert other.session().options["config"]["values"] == ["old"]
     assert other.session().permissions == "read"
     assert (directory / "role.toml").read_bytes() == original
 
     (directory / "role.toml").write_text(
-        'backend = "codex"\ncwd = "new-default"\npermissions = "read"\n'
+        'backend = "codex"\ncwd = "new-default"\npermissions = "edit"\n'
         '[backend_options.fake]\nmarker = "refreshed"\n'
         '[backend_options.fake.config]\nkeep = false\nvalues = ["later"]\n'
         '[prompts]\ncustom = "refreshed hook"\n',
@@ -89,16 +76,17 @@ def test_overrides_merge_without_mutating_defaults_or_other_agents(beeloop_root)
     restored = ag.restore(agent.agent_id)
     assert restored.record["backend"] == "fake"
     assert restored.cwd == agent.cwd
-    assert restored.session().permissions == "approve_for_me"
-    assert restored.session().options == {"marker": "refreshed", "config": {"keep": False, "values": ["new"]}}
-    assert restored.role.prompts == {"session_init": "custom init", "custom": "refreshed hook"}
+    assert restored.session().permissions == "edit"
+    assert restored.session().options == {"marker": "refreshed", "config": {"values": ["new"]}}
+    assert restored.role.prompts == {"custom": "refreshed hook"}
     assert messaging._allowed_receivers(records.agent_path(agent.agent_id) / "config.toml") == allowed
 
 
-def test_backend_and_native_options_reach_fresh_and_resumed_codex_argv(monkeypatch):
+def test_backend_and_native_options_reach_fresh_and_resumed_codex_argv(monkeypatch, beeloop_root):
+    make_role(beeloop_root, "worker", 'permissions = "read"\n')
     monkeypatch.setenv("BEELOOP_CODEX_BIN", "/unused/codex")
     config = {
-        "backend": "codex", "permissions": "read",
+        "backend": "codex",
         "backend_options": {"codex": {"model": "gpt-6-astra", "config": {"feature": ["a", "b"]}}},
     }
     agent = ag.create("worker", cwd="project", config=config)
@@ -113,14 +101,14 @@ def test_backend_and_native_options_reach_fresh_and_resumed_codex_argv(monkeypat
         assert ("resume" in argv) == active
 
 
-def test_ttl_heartbeat_and_prompts_survive_dormancy_and_fresh_session(monkeypatch):
-    config = {
-        "backend": "fake", "permissions": "approve_for_me",
-        "backend_options": {"fake": {"marker": "retained"}},
-        "session_ttl": {"idle": "1h"}, "heartbeat": {"every": "2h"},
-        "prompts": {"session_init": "initialize", "session_expire": "save",
-                    "session_resume": "restore", "heartbeat": "check"},
-    }
+def test_backend_options_survive_role_owned_lifecycle(monkeypatch, beeloop_root):
+    make_role(beeloop_root, "worker",
+        'permissions = "edit"\n[session_ttl]\nidle = "1h"\n'
+        '[heartbeat]\nevery = "2h"\n'
+        '[prompts]\nsession_init = "initialize"\nsession_expire = "save"\n'
+        'session_resume = "restore"\nheartbeat = "check"\n',
+    )
+    config = {"backend": "fake", "backend_options": {"fake": {"marker": "retained"}}}
     agent = ag.create("worker", cwd="project", config=config)
     scheduled = agent_timers.list_wakes(agent.agent_id)
     heartbeat = next(timer for timer in scheduled if not session_ttl.is_expiry_timer(timer))
@@ -139,30 +127,18 @@ def test_ttl_heartbeat_and_prompts_survive_dormancy_and_fresh_session(monkeypatc
     agent.spin([InputItem("user", "continue")])
     assert agent.session_id != old_session
     assert agent.session().options == {"marker": "retained"}
-    assert agent.session().permissions == "approve_for_me"
+    assert agent.session().permissions == "edit"
     assert fake.turns(agent.agent_id)[-1][0][1].startswith("restore\n\nPrevious session handoff:")
     assert any(session_ttl.is_expiry_timer(timer) for timer in agent_timers.list_wakes(agent.agent_id))
 
 
-def test_null_disables_supported_defaults_and_config_cwd_is_a_default():
-    agent = ag.create("orchestrator", config={
-        "backend": "fake", "session_ttl": None, "heartbeat": None,
-        "prompts": None, "cwd": "configured-work",
-    })
-    assert agent.cwd == records.root() / "configured-work"
-    assert ag.restore(agent.agent_id).ttl_policy is None
-    assert agent.role.prompts == {}
-    assert agent_timers.list_wakes(agent.agent_id) == []
-    with pytest.raises(ag.AgentError, match="neither role"):
-        ag.create("orchestrator", config={"cwd": None})
-
-
-def test_type_override_uses_registered_class_and_stays_pinned(monkeypatch):
+def test_backend_override_uses_role_type(monkeypatch, beeloop_root):
     class Specialist(ag.Agent):
         pass
 
     monkeypatch.setitem(agent_module.REGISTRY, "Specialist", Specialist)
-    agent = ag.create("worker", cwd="project", config={"type": "Specialist", "backend": "fake"})
+    make_role(beeloop_root, "worker", 'type = "Specialist"\n')
+    agent = ag.create("worker", cwd="project", config={"backend": "fake"})
     assert type(agent) is Specialist
     assert type(ag.restore(agent.agent_id)) is Specialist
 
@@ -177,39 +153,34 @@ def test_backend_validation_uses_the_registry(monkeypatch):
 
 
 @pytest.mark.parametrize("config", [
-    [], {"agent_id": "injected"}, {"session_id": "injected"}, {"status": "closed"},
-    {"timers": []}, {"turns": 10}, {"unknown": True},
-    {"type": []}, {"type": "MissingClass"}, {"backend": 1}, {"backend": "missing"},
-    {"permissions": False}, {"backend": "codex", "permissions": "missing"},
-    {"cwd": []}, {"cwd": ""}, {"backend_options": []},
-    {"backend_options": {"fake": []}}, {"backend_options": {"missing": {}}},
+    [], {"backend": None}, {"backend": 1}, {"backend": "missing"},
+    {"backend_options": []}, {"backend_options": {"fake": []}},
+    {"backend_options": {"missing": {}}},
     {"backend": "codex", "backend_options": {"codex": {"model": 42}}},
     {"backend": "codex", "backend_options": {"codex": {"config": []}}},
     {"backend": "codex", "backend_options": {"codex": {"config": {"bad": {}}}}},
-    {"session_ttl": []}, {"session_ttl": {}}, {"session_ttl": {"idle": "bad"}},
-    {"session_ttl": {"other": "1h"}}, {"heartbeat": "1h"}, {"heartbeat": {"every": 0}},
-    {"heartbeat": {"every": "1h", "other": True}}, {"prompts": []}, {"prompts": {"hook": 1}},
-    {"allowed_receivers": []}, {"allowed_receivers": {"roles": "worker"}},
-    {"allowed_receivers": {"ids": [1]}}, {"allowed_receivers": {"other": []}},
-    {"instance": "fresh"}, {"instance": []}, {"backend_options": {"fake": {"bad": float("nan")}}},
+    {"backend_options": {"fake": {"bad": float("nan")}}},
     {"backend_options": {"fake": {1: "not a JSON field"}}},
     {"backend_options": {"fake": {"not_an_array": (1, 2)}}},
+    {"type": "Agent"}, {"cwd": "elsewhere"}, {"permissions": "yolo"},
+    {"prompts": {}}, {"session_ttl": None}, {"heartbeat": None},
+    {"allowed_receivers": {"roles": ["*"]}}, {"instance": "experiment"},
+    {"agent_id": "injected"}, {"session_id": "injected"}, {"status": "closed"},
+    {"timers": []}, {"turns": 10}, {"unknown": True},
 ])
 def test_invalid_config_fails_before_allocation_or_workspace_creation(config, monkeypatch):
     monkeypatch.setattr(agent_module, "new_agent_id", lambda *_: pytest.fail("allocated an agent"))
     monkeypatch.setattr(fake.FakeBackend, "open", lambda *_: pytest.fail("opened a session"))
-    with pytest.raises((ag.AgentError, BackendError)):
+    with pytest.raises((RoleConfigError, BackendError)):
         ag.create("worker", cwd="must-not-exist", config=config)
     assert not (records.root() / "must-not-exist").exists()
     assert not list((records.root() / "runtime/agents").glob("*"))
 
 
-def test_receiver_override_is_the_workers_live_messaging_policy(monkeypatch):
-    agent = ag.create("worker", cwd="project", config={
-        "backend": "fake", "allowed_receivers": {"roles": ["worker"]},
-    })
-    receiver = ag.create("worker", cwd="other", backend="fake")
-    other_role = ag.create("orchestrator", backend="fake")
+def test_backend_override_keeps_role_receiver_policy(monkeypatch):
+    agent = ag.create("worker", cwd="project", config={"backend": "fake"})
+    receiver = ag.create("orchestrator", backend="fake")
+    other_role = ag.create("worker", cwd="other", backend="fake")
     submitted = []
     monkeypatch.setattr(messaging, "_submit", submitted.append)
     messaging.send(records.agent_path(agent.agent_id), receiver.agent_id, "result")

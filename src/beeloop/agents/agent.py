@@ -24,7 +24,7 @@ from .records import (
     write,
     write_file,
 )
-from .roles import Role, load_role, merge_config, workspace
+from .roles import Role, load_role, parse_creation_config, workspace
 
 
 class NotResumable(AgentError):
@@ -63,7 +63,7 @@ class Agent:
             raise AgentError(
                 "an agent needs either an agent_id to continue or a role to create"
             )
-        self.role = load_role(self.record["role"], self.record.get("config"))
+        self.role = load_role(self.record["role"])
         self.backend = backends.get(self.record["backend"])
         self.ttl_policy = session_ttl.load_policy(self.agent_id)
 
@@ -76,15 +76,14 @@ class Agent:
         config: dict[str, Any] | None,
         **extra: Any,
     ) -> dict[str, Any]:
-        role = load_role(role_name, config)
-        backend_name = backend or role.backend
+        role = load_role(role_name)
+        config = parse_creation_config(config)
+        backend_name = backend or config.get("backend", role.backend)
         adapter = backends.get(backend_name)
-        adapter.validate_config(role.options_for(backend_name))
+        adapter.validate_config(role.options_for(backend_name, config.get("backend_options")))
         where = workspace(role, cwd)
-        if config is not None:
-            extra["config"] = merge_config({}, config)
-            if "instance" in config:
-                extra["instance"] = config["instance"]
+        if "backend_options" in config:
+            extra["backend_options"] = config["backend_options"]
         where.mkdir(parents=True, exist_ok=True)
 
         stamp = now()
@@ -325,7 +324,7 @@ class Agent:
             prepared=self.status == PREPARED,
             cwd=self.cwd,
             permissions=self.role.permissions,
-            options=self.role.options_for(self.record["backend"]),
+            options=self.role.options_for(self.record["backend"], self.record.get("backend_options")),
         )
 
     def close(self) -> None:
@@ -367,7 +366,7 @@ def create(
     config: dict[str, Any] | None = None,
     **extra: Any,
 ) -> Agent:
-    found = load_role(role, config)
+    found = load_role(role)
     return agent_class(found.type, found)(
         role=role, cwd=cwd, backend=backend, config=config, **extra
     )
