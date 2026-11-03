@@ -24,7 +24,7 @@ from .records import (
     write,
     write_file,
 )
-from .roles import Role, load_role, workspace
+from .roles import Role, load_role, merge_config, workspace
 
 
 class NotResumable(AgentError):
@@ -43,6 +43,7 @@ class Agent:
         role: str | None = None,
         cwd: Path | str | None = None,
         backend: str | None = None,
+        config: dict[str, Any] | None = None,
         **extra: Any,
     ) -> None:
         if agent_id is not None and role is not None:
@@ -50,19 +51,19 @@ class Agent:
                 "pass an agent_id to continue an agent, or a role to create "
                 "one -- never both; they mean opposite things"
             )
-        if agent_id is not None and backend is not None:
+        if agent_id is not None and (backend is not None or config is not None):
             raise AgentError(
-                "pass a backend when creating an agent, not when restoring one"
+                "pass backend or config when creating an agent, not when restoring one"
             )
         if agent_id is not None:
             self.record = read(agent_id)
         elif role is not None:
-            self.record = self._allocate(role, cwd, backend, **extra)
+            self.record = self._allocate(role, cwd, backend, config, **extra)
         else:
             raise AgentError(
                 "an agent needs either an agent_id to continue or a role to create"
             )
-        self.role = load_role(self.record["role"])
+        self.role = load_role(self.record["role"], self.record.get("config"))
         self.backend = backends.get(self.record["backend"])
         self.ttl_policy = session_ttl.load_policy(self.agent_id)
 
@@ -72,12 +73,18 @@ class Agent:
         role_name: str,
         cwd: Path | str | None,
         backend: str | None,
+        config: dict[str, Any] | None,
         **extra: Any,
     ) -> dict[str, Any]:
-        role = load_role(role_name)
+        role = load_role(role_name, config)
         backend_name = backend or role.backend
         adapter = backends.get(backend_name)
+        adapter.validate_config(role.permissions, role.options_for(backend_name))
         where = workspace(role, cwd)
+        if config is not None:
+            extra["config"] = merge_config({}, config)
+            if "instance" in config:
+                extra["instance"] = config["instance"]
         where.mkdir(parents=True, exist_ok=True)
 
         stamp = now()
@@ -357,9 +364,10 @@ def create(
     role: str,
     cwd: Path | str | None = None,
     backend: str | None = None,
+    config: dict[str, Any] | None = None,
     **extra: Any,
 ) -> Agent:
-    found = load_role(role)
+    found = load_role(role, config)
     return agent_class(found.type, found)(
-        role=role, cwd=cwd, backend=backend, **extra
+        role=role, cwd=cwd, backend=backend, config=config, **extra
     )

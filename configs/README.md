@@ -5,6 +5,11 @@ Role settings: [router](roles/router/role.toml),
 and [planner](roles/planner/role.toml). TTL changes for existing agents also
 require updating their runtime configuration snapshot and timer.
 
+Bound orchestrators can override defaults for one agent through the existing
+`create_agent(..., config={...})` tool. See
+[per-agent configuration](../plugins/beeloop-tools/skills/agent-creation/SKILL.md#per-agent-configuration)
+for supported fields, merge rules, and persistence.
+
 This checkout is the default root. To use another prepared root containing
 `configs/`, `router/`, and `orchestrator/`, set `~/.config/beeloop/loop.toml`:
 

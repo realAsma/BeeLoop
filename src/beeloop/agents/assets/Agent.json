@@ -34,6 +34,10 @@
     }
   },
   "properties": {
+    "config": {
+      "type": "object",
+      "description": "Explicit creation overrides, merged over current role defaults for runtime settings and the agent's configuration snapshot for policies. Validated by the role parser; not arbitrary record fields."
+    },
     "type": {
       "type": "string",
       "minLength": 1,

@@ -62,9 +62,12 @@ def parse_policy(value: Any) -> Policy | None:
 
 
 def load_policy(agent_id: str) -> Policy | None:
+    # Roles parse TTL policies, so defer this import to break that dependency cycle.
+    from .roles import load_agent_config
+
     path = records.agent_path(agent_id) / "config.toml"
     try:
-        config = tomllib.loads(path.read_text("utf-8"))
+        config = load_agent_config(agent_id)
         return parse_policy(config.get("session_ttl"))
     except (OSError, tomllib.TOMLDecodeError, PolicyError) as exc:
         raise records.AgentError(f"the agent config at {path} is broken: {exc}") from exc

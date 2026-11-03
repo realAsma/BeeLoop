@@ -91,6 +91,9 @@ class Backend(ABC):
     name: ClassVar[str]
     delivery_mode: ClassVar[DeliveryMode]
 
+    def validate_config(self, permissions: str, options: Mapping[str, Any]) -> None:
+        """Validate adapter-specific creation settings without opening a session."""
+
     @abstractmethod
     def open(self) -> str:
         """Reserve a resumable handle without a model call; allocation may be lazy.

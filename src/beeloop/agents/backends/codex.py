@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import uuid
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from .base import (
     Backend,
@@ -39,6 +39,10 @@ _PROFILES = {
 class CodexBackend(Backend):
     name = "codex"
     delivery_mode = "serial"
+
+    def validate_config(self, permissions: str, options: Mapping[str, Any]) -> None:
+        _profile(permissions)
+        _option_args(options)
 
     def open(self) -> str:
         """Reserve a placeholder until the first exec call returns its thread id."""
@@ -100,27 +104,39 @@ def _session_unavailable(message: str) -> bool:
 
 
 def _argv(session: Session, prompt: str) -> list[str]:
-    profile = _PROFILES.get(session.permissions)
+    argv = [_binary(), "exec", "--json", "--skip-git-repo-check", *_profile(session.permissions)]
+    argv += _option_args(session.options)
+    if not session.prepared:
+        argv += ["resume", session.session_id]
+    argv.append(prompt)
+    return argv
+
+
+def _profile(permissions: str) -> list[str]:
+    profile = _PROFILES.get(permissions)
     if profile is None:
         raise BackendError(
-            f"permission profile {session.permissions!r} is not in this "
+            f"permission profile {permissions!r} is not in this "
             f"backend's catalog; use one of "
             f"{', '.join(sorted(_PROFILES))}, or add it to _PROFILES."
         )
+    return profile
 
-    argv = [_binary(), "exec", "--json", "--skip-git-repo-check", *profile]
-    if model := session.options.get("model"):
+
+def _option_args(options: Mapping[str, Any]) -> list[str]:
+    argv: list[str] = []
+    if "model" in options:
+        model = options["model"]
+        if not isinstance(model, str) or not model:
+            raise BackendError("Codex model must be a non-empty string")
         argv += ["--model", str(model)]
-    overrides = session.options.get("config", {})
+    overrides = options.get("config", {})
     if not isinstance(overrides, dict):
         raise BackendError("Codex config overrides must be a table")
     for key, value in overrides.items():
         if not isinstance(key, str) or not key:
             raise BackendError("Codex config override keys must be non-empty strings")
         argv += ["-c", f"{key}={_config_value(value)}"]
-    if not session.prepared:
-        argv += ["resume", session.session_id]
-    argv.append(prompt)
     return argv
 
 

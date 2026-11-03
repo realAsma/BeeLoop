@@ -149,8 +149,9 @@ def test_server_introspection_with_and_without_agent_binding(bound, beeloop_root
     assert "required" not in root_tool.input_schema
     assert resolved_root.content[0].text == str(beeloop_root.resolve())
     create = next(tool for tool in listed.tools if tool.name == "create_agent")
-    assert set(create.input_schema["properties"]) == {"role", "cwd"}
+    assert set(create.input_schema["properties"]) == {"role", "cwd", "config"}
     assert set(create.input_schema["required"]) == {"role"}
+    assert any(shape.get("type") == "object" for shape in create.input_schema["properties"]["config"]["anyOf"])
     assert "without starting" in create.description
     by_name = {tool.name: tool for tool in listed.tools}
     runner = by_name["run_script"].input_schema
@@ -177,6 +178,7 @@ def test_live_tool_errors_keep_the_actionable_reason():
             for name, arguments, reason in [
                 ("message", {"receiver": "missing", "msg": ""}, "requires a bound BeeLoop agent"),
                 ("create_agent", {"role": "missing"}, "requires a bound BeeLoop agent"),
+                ("create_agent", {"role": "worker", "config": {}}, "requires a bound BeeLoop agent"),
                 ("list_agents", {}, "requires a bound BeeLoop agent"),
                 ("timer_list", {}, "requires a bound BeeLoop agent"),
             ]:
@@ -252,6 +254,124 @@ def test_create_agent_requires_role_creation_permission(beeloop_root):
         server.create_agent("target")
 
     assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
+
+
+@pytest.mark.parametrize("role", ["worker", "router"])
+@pytest.mark.parametrize("config", [{}, {"backend": "fake"}])
+def test_only_orchestrators_can_override_config_at_server_and_core(role, config):
+    sender = ag.create(role, cwd="project", backend="fake")
+    bind(sender)
+    rules(sender, roles=["*"])
+    for call in (
+        lambda: server.create_agent("worker", "target", config),
+        lambda: messaging.create_agent(records.agent_path(sender.agent_id), "worker", "target", config),
+    ):
+        with pytest.raises(messaging.MessagingError, match="bound orchestrator"):
+            call()
+    assert not (records.root() / "target").exists()
+    assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
+
+
+def test_override_authority_rechecks_role_and_canonical_identity(tmp_path):
+    sender = orchestrator(backend="fake")
+    bind(sender)
+    rules(sender, roles=["*"])
+    records.update(sender.agent_id, sender.SCHEMA, {"role": "worker"})
+    with pytest.raises(messaging.MessagingError, match="bound orchestrator"):
+        server.create_agent("worker", "target", {})
+    records.update(sender.agent_id, sender.SCHEMA, {"role": "orchestrator"})
+    spoof = tmp_path / "spoof" / sender.agent_id
+    shutil.copytree(records.agent_path(sender.agent_id), spoof)
+    with pytest.raises(messaging.MessagingError, match="bound orchestrator"):
+        messaging.create_agent(spoof, "worker", "target", {})
+    path = records.record_path(sender.agent_id)
+    record = json.loads(path.read_text())
+    record["agent_id"] = "other-agent-03-11-26"
+    path.write_text(json.dumps(record))
+    with pytest.raises(messaging.MessagingError, match="bound orchestrator"):
+        server.create_agent("worker", "target", {})
+    assert not (records.root() / "target").exists()
+
+
+def test_config_overrides_do_not_bypass_creation_allowlist_or_message_routes():
+    sender = orchestrator(backend="fake")
+    bind(sender)
+    rules(sender, ids=["*"])
+    with pytest.raises(messaging.MessagingError, match="not allowed to create"):
+        server.create_agent("worker", "project", {"backend": "fake"})
+    rules(sender, roles=["worker"])
+    with pytest.raises(messaging.MessagingError, match="unknown receiver route field"):
+        server.message({"role": "worker", "cwd": "project", "config": {"backend": "fake"}}, "work")
+    assert len(list(records.runtime("agents").glob("*/record.json"))) == 1
+
+
+@pytest.mark.parametrize("contents", ["broken JSON", "[]", None])
+def test_config_overrides_reject_an_invalid_bound_record(contents):
+    sender = orchestrator(backend="fake")
+    bind(sender)
+    record = records.read(sender.agent_id)
+    record["status"] = "invalid-status"
+    records.record_path(sender.agent_id).write_text(contents if contents is not None else json.dumps(record))
+    with pytest.raises((ag.AgentError, messaging.MessagingError)):
+        server.create_agent("worker", "rejected", {})
+    assert not (records.root() / "rejected").exists()
+
+
+def test_router_can_still_create_orchestrator_with_defaults():
+    sender = ag.create("router", backend="fake")
+    bind(sender)
+    result = server.create_agent("orchestrator")
+    created = ag.restore(result["agent_id"])
+    assert created.record["role"] == "orchestrator"
+    assert created.record["backend"] == ag.load_role("orchestrator").backend
+    assert "config" not in created.record
+
+
+def test_live_config_tool_validates_then_creates_without_dispatch():
+    sender = orchestrator(backend="fake")
+
+    async def inspect_config():
+        async with live_session(sender) as session:
+            for config, reason in (
+                ({"status": "closed"}, "unknown config field"),
+                ({"backend": "missing"}, "unknown backend"),
+                ({"session_ttl": {"idle": "invalid"}}, "positive integer"),
+                ({"backend": "codex", "backend_options": {"codex": {"config": []}}}, "config overrides must be a table"),
+            ):
+                invalid = await session.call_tool("create_agent", {"role": "worker", "cwd": "rejected", "config": config})
+                assert invalid.is_error
+                assert reason in invalid.content[0].text
+            created = await session.call_tool("create_agent", {
+                "role": "worker", "cwd": "project",
+                "config": {"backend": "fake", "permissions": "read", "backend_options": {"fake": {"marker": "chosen"}}},
+            })
+            assert not created.is_error
+            return created.structured_content["agent_id"]
+
+    worker_id = asyncio.run(inspect_config())
+    created = ag.restore(worker_id)
+    assert created.session().options == {"marker": "chosen"}
+    assert created.session().permissions == "read"
+    assert created.record["turns"] == 0
+    assert fake.turns(worker_id) == []
+    assert not (records.root() / "rejected").exists()
+
+
+@pytest.mark.parametrize("role", ["worker", "router"])
+def test_live_config_overrides_require_orchestrator_binding(role):
+    sender = ag.create(role, cwd="project", backend="fake")
+    rules(sender, roles=["*"])
+
+    async def rejected():
+        async with live_session(sender) as session:
+            result = await session.call_tool("create_agent", {
+                "role": "worker", "cwd": "rejected", "config": {},
+            })
+            assert result.is_error
+            assert "bound orchestrator" in result.content[0].text
+
+    asyncio.run(rejected())
+    assert not (records.root() / "rejected").exists()
 
 
 def test_worker_role_allows_orchestrators_but_not_unconfigured_roles(monkeypatch):

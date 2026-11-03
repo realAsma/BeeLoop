@@ -10,9 +10,11 @@ on track, what has changed since the user was last briefed, and whether any
 blocker or missing user input needs attention.
 
 Use the heartbeat as a backstop for delegated work; do not duplicate workers'
-job polling. Send at most one concise summary of meaningful changes or needed
-user input per heartbeat. Use the existing thread for this work. If none exists,
-use their preferred communication channel. Keep quiet when status is unchanged.
+job polling. Send at most one concise routine progress summary per heartbeat;
+skip unchanged status. Share meaningful results, new learnings, interesting
+behavior, completion, or needed user input promptly without waiting for a
+heartbeat. Use the existing thread for this work. If none exists, use their
+preferred communication channel.
 
 Evaluate whether the work is done:
 

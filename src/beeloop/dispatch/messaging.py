@@ -6,14 +6,20 @@ import json
 import subprocess
 import sys
 import tomllib
-from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any
 
 from beeloop import agents as ag
 from beeloop.agents.records import root
-from beeloop.agents.roles import load_role, workspace
+from beeloop.agents.roles import (
+    AllowedReceivers,
+    RoleConfigError,
+    load_agent_config,
+    load_role,
+    parse_allowed_receivers,
+    workspace,
+)
 from beeloop.dispatch.envelope import Envelope, serialize
 from beeloop.dispatch.routes import (
     Route,
@@ -29,23 +35,6 @@ class MessagingError(RuntimeError):
     pass
 
 
-@dataclass(frozen=True)
-class AllowedReceivers:
-    roles: frozenset[str]
-    ids: frozenset[str]
-
-    def allows(self, role: str, agent_id: str) -> bool:
-        return (
-            "*" in self.roles
-            or "*" in self.ids
-            or role in self.roles
-            or agent_id in self.ids
-        )
-
-    def allows_role(self, role: str) -> bool:
-        return "*" in self.roles or role in self.roles
-
-
 ROUTE_FIELDS = frozenset({"role", "cwd", "instance"})
 
 
@@ -58,16 +47,35 @@ def create_agent(
     sender_directory: Path,
     role: str,
     cwd: str | None = None,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Authorize and create an agent without dispatching a turn."""
     _identity(sender_directory)
+    if config is not None:
+        require_orchestrator(sender_directory)
     allowed = _allowed_receivers(sender_directory / "config.toml")
-    created = _create(allowed, role, cwd=cwd)
+    created = _create(allowed, role, cwd=cwd, config=config)
     return {
         "agent_id": created.agent_id,
         "role": created.record["role"],
         "cwd": str(created.cwd),
     }
+
+
+def require_orchestrator(directory: Path) -> None:
+    """Authorize config overrides against the current canonical bound record."""
+    directory = directory.resolve()
+    if directory.parent != (root() / "runtime" / "agents").resolve():
+        raise MessagingError("config overrides require a bound orchestrator in runtime/agents")
+    try:
+        record = ag.read(directory.name)
+        if not isinstance(record, dict):
+            raise TypeError("agent record must be an object")
+    except (OSError, ValueError, TypeError) as exc:
+        raise MessagingError(f"cannot read bound orchestrator identity: {exc}") from exc
+    if record.get("agent_id") != directory.name or record.get("role") != "orchestrator":
+        raise MessagingError("config overrides require a bound orchestrator")
+    ag.validate(record, ag.agent_class(record.get("type", "")).SCHEMA)
 
 
 def send(
@@ -172,23 +180,12 @@ def _identity(directory: Path) -> dict[str, str]:
 
 def _allowed_receivers(path: Path) -> AllowedReceivers:
     try:
-        config = tomllib.loads(path.read_text("utf-8")) if path.exists() else {}
-        rules = config.get("allowed_receivers", {})
-        roles = _string_list(rules.get("roles", []), path, "roles")
-        ids = _string_list(rules.get("ids", []), path, "ids")
-    except (OSError, tomllib.TOMLDecodeError, AttributeError) as exc:
+        config = load_agent_config(path.parent.name) if path.exists() else {}
+        return parse_allowed_receivers(config.get("allowed_receivers", {}))
+    except (OSError, tomllib.TOMLDecodeError, RoleConfigError) as exc:
         raise MessagingError(
             f"cannot read allowed_receivers from {path}: {exc}"
         ) from exc
-    return AllowedReceivers(frozenset(roles), frozenset(ids))
-
-
-def _string_list(value: Any, path: Path, field: str) -> list[str]:
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise MessagingError(
-            f"{path}: allowed_receivers.{field} must be a list of strings"
-        )
-    return value
 
 
 def _resolve(

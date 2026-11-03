@@ -16,7 +16,9 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from beeloop import scripts, timers
 from beeloop.agents import records, timers as agent_timers
+from beeloop.agents.backends import BackendError
 from beeloop.agents.records import AgentError
+from beeloop.agents.roles import RoleConfigError
 from beeloop.config import ConfigError, root as configured_root
 from beeloop.dispatch import messaging
 from beeloop.dispatch.routes import RouteError
@@ -37,7 +39,8 @@ def _tool(function: Callable[..., Any]) -> Callable[..., Any]:
         try:
             return function(*args, **kwargs)
         except (
-            MessagingError, AgentError, scripts.ScriptError, timers.TimerError, ConfigError, RouteError
+            MessagingError, AgentError, BackendError, RoleConfigError,
+            scripts.ScriptError, timers.TimerError, ConfigError, RouteError
         ) as exc:
             raise ToolError(str(exc)) from exc
 
@@ -75,9 +78,20 @@ def run_script(script: str, args: list[str] | None = None, stdin: str | None = N
 
 
 @_tool
-def create_agent(role: str, cwd: str | None = None) -> dict[str, str]:
-    """Create an authorized agent without starting its first model turn."""
-    return messaging.create_agent(_agent_directory(), role, cwd)
+def create_agent(
+    role: str,
+    cwd: str | None = None,
+    config: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Create an authorized agent without starting its first model turn.
+
+    Only bound orchestrators may provide config overrides for role defaults.
+    Tables merge recursively; lists replace defaults. Caller cwd wins.
+    """
+    directory = _agent_directory()
+    if config is not None:
+        messaging.require_orchestrator(directory)
+    return messaging.create_agent(directory, role, cwd, config)
 
 
 @_tool
