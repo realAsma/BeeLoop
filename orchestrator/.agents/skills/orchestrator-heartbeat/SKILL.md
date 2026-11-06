@@ -10,19 +10,16 @@ on track, what has changed since the user was last briefed, and whether any
 blocker or missing user input needs attention.
 
 Use the heartbeat as a backstop for delegated work; do not duplicate workers'
-job polling. Send at most one concise routine progress summary per heartbeat;
-skip unchanged status. Share meaningful results, new learnings, interesting
-behavior, completion, or needed user input promptly without waiting for a
-heartbeat. Use the existing thread for this work. If none exists, use their
-preferred communication channel.
+job polling. Follow the communication guidance in [AGENTS.md](../../../AGENTS.md)
+to decide whether an update is warranted. Use the existing thread for this work.
+If none exists, use their preferred communication channel.
 
 Evaluate whether the work is done:
 
 - If you're confident all work is complete, cancel the recurring heartbeat timer
   that triggered this turn. No need to notify the user for this high-confidence
   cancellation.
-- If blocked, keep the heartbeat active. Notify the user only when their input
-  is needed, and do not repeat an unchanged blocker.
+- If blocked, keep the heartbeat active. Do not repeat an unchanged blocker.
 - If unsure whether the work is done, ask before cancelling. Keep the heartbeat
   active until the user confirms completion.
 - Otherwise, leave the heartbeat active.

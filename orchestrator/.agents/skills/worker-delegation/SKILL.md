@@ -29,9 +29,7 @@ description: Choose workers and send assignments using BeeLoop agent creation an
    ```
 
 4. Retain the worker ID. Do not wait for worker completion. End your turn; the
-   worker will message you in a later turn. Share meaningful results, new
-   learnings, interesting behavior, completion, or needed user input promptly
-   through relevant intakes. Summarize routine progress at the heartbeat.
+   worker will message you in a later turn.
 
 ## Worker state
 
